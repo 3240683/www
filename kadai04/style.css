@@ -19,4 +19,5 @@ footer{background-color: whitesmoke;
         color:gray;
         font-size:smaller;
         text-align: center;}
-body{background-color: rgb(237, 235, 235);}
+body{background-color: rgb(237, 235, 235);
+    text-align: center;}
