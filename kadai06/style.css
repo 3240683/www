@@ -4,16 +4,17 @@ h1{background-color:black;
         color:white;
         text-align: center;}
 
-div.item{width: 100px;
+div.item{width: 200px;
          margin:10px;
          text-align: center;
          border:ridge;
          border-radius:5px;
-         height: 150px;}
+         height: 200px;}
 
-img{width:100px;
+img{width:200px;
     height: 100px;;}
 
 div.box{display:flex;
         width:600px;
-        flex-wrap:wrap;}
+        flex-wrap:wrap;
+        height: 200px;}
