@@ -1,0 +1,19 @@
+@charset "UTF-8";
+
+h1{background-color:black;
+        color:white;
+        text-align: center;}
+
+div.item{width: 100px;
+         margin:10px;
+         text-align: center;
+         border:ridge;
+         border-radius:5px;
+         height: 150px;}
+
+img{width:100px;
+    height: 100px;;}
+
+div.box{display:flex;
+        width:600px;
+        flex-wrap:wrap;}
