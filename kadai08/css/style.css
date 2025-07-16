@@ -19,7 +19,7 @@ header img {
     height: auto;
     max-height: 300px;
     object-fit: cover;
-    border-radius: 8px;
+    border-radius: 4px;
 }
 
 nav ol, footer li {
