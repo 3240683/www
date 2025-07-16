@@ -114,3 +114,7 @@ div.site{
     font-size: smaller;
     color:grey;
 }
+
+nav ol li a{
+    font-size: 150%;
+}
