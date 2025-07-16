@@ -62,6 +62,7 @@ img {
 
 .spot, .food-item, .acsess {
     margin-bottom: 2em;
+    text-align: center;
 }
 
 h1 {
@@ -107,8 +108,4 @@ a:hover {
 .atama{
     font-size: 150%;
     font-weight: 500;
-}
-
-.food-item{
-    text-align: center;
 }
