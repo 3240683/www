@@ -106,5 +106,11 @@ a:hover {
 
 .atama{
     font-size: 150%;
-    font-weight: 500;
+    font-weight: 500
+}
+
+div.site{
+    text-align: right;
+    font-size: smaller;
+    color:grey;
 }
