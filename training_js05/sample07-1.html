@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配列の使い方</title>
+</head>
+<body>
+    <h1>配列データの表示</h1>
+    <p>ボタンをクリックすると、価格が表示されます。</p>
+    <button onclick="showPrice_0();">Sサイズ</button>
+    <button onclick="showPrice_1();">Mサイズ</button>
+    <button onclick="showPrice_2();">Lサイズ</button>
+    <script>
+        let price = [480,980,1280];
+        function showPrice_0(){
+            alert('価格は' + price[0] + '円です');
+        }
+        function showPrice_1(){
+            alert('価格は' + price[1] + '円です');
+        }
+        function showPrice_2(){
+            alert('価格は' + price[2] + '円です');
+        }
+    </script>
+</body>
+</html>
