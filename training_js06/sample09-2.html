@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>要素の取得と内容の変更</title>
+    <style>
+        #message{
+            width:250px;
+            border:solid 3px #ff9999;
+            padding:15px;
+            margin-top:30px;
+        }
+    </style>
+</head>
+<body>
+    <h3>問題</h3>
+    <p>日本で一番高い山は？<button onclick="showAnswer();">解答を見る</button></p>
+    <div id="message">ここに解答が表示されます。</div>  
+
+    <script>
+        function showAnswer(){
+            let answerBox = document.getElementById('message');
+            answerBox.textContent = '答えは「富士山」です。';
+        }
+    </script>
+</body>
+</html>
