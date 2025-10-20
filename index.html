@@ -3,48 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>課題リンク生成</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin-top: 50px;
-    }
-
-    a {
-      font-size: 1.5em;
-      text-decoration: none;
-      color: #007acc;
-    }
-
-    a:hover {
-      color: #005a99;
-    }
-  </style>
+  <title>課題チェック</title>
 </head>
 <body>
-  <a id="kadaiLink" href="#" target="_blank">課題チェック</a>
-
   <script>
     window.onload = function () {
-      const trainingNum = prompt("training の番号を入力してください（例: 1）");
-      const sampleNum = prompt("sample の番号を入力してください（例: 1）");
+      const trainingNum = prompt("training の番号を入力してください");
+      const sampleNum = prompt("sample のすぐ後ろの番号を入力してください");
+      const fileNum = prompt("sample の最後の番号を入力してください");
 
-      // 入力チェック
+      // 全ての入力が有効な数字かを確認
       if (
         trainingNum !== null && !isNaN(trainingNum) && trainingNum.trim() !== "" &&
-        sampleNum !== null && !isNaN(sampleNum) && sampleNum.trim() !== ""
+        sampleNum !== null && !isNaN(sampleNum) && sampleNum.trim() !== "" &&
+        fileNum !== null && !isNaN(fileNum) && fileNum.trim() !== ""
       ) {
-        // training番号を2桁に（例: 1 → 01）
+        // training と sample の番号を2桁に整形（例: 1 → 01）
         const trainingStr = trainingNum.padStart(2, '0');
+        const sampleStr = sampleNum.padStart(2, '0');
 
-        const baseURL = `https://3240683.github.io/www/training_js${trainingStr}/sample01-${sampleNum}.html`;
+        // 完成URL
+        const fullURL = `https://3240683.github.io/www/training_js${trainingStr}/sample${sampleStr}-${fileNum}.html`;
 
+        // リンクを更新
         const link = document.getElementById("kadaiLink");
-        link.href = baseURL;
-        link.textContent = `課題 training_js${trainingStr}/sample01-${sampleNum}.html を開く`;
+        link.href = fullURL;
+        link.textContent = `課題 training_js${trainingStr}/sample${sampleStr}-${fileNum}.html を開く`;
+
+        // 別タブで自動的に開く
+        window.open(fullURL, '_blank');
       } else {
-        // 無効な入力時
+        // 無効な入力
         const link = document.getElementById("kadaiLink");
         link.textContent = "無効な入力です。ページを再読み込みしてください。";
         link.removeAttribute("href");
