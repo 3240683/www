@@ -1,31 +1,55 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>check</title>
-    <style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>課題リンク生成</title>
+  <style>
     body {
-        font-family: sans-serif;
-        margin-top: 50px;
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 50px;
     }
 
     a {
-        font-size: 1.5em;
-        text-decoration: none;
-        color: #007acc;
+      font-size: 1.5em;
+      text-decoration: none;
+      color: #007acc;
     }
 
     a:hover {
-        color: #005a99;
+      color: #005a99;
     }
-</style>
+  </style>
 </head>
 <body>
-    <a href = "https://3240683.github.io/www/training_js01/sample01-1.html" target="_blank">課題チェック</a>
+  <a id="kadaiLink" href="#" target="_blank">課題チェック</a>
+
+  <script>
+    window.onload = function () {
+      const trainingNum = prompt("training の番号を入力してください（例: 1）");
+      const sampleNum = prompt("sample の番号を入力してください（例: 1）");
+
+      // 入力チェック
+      if (
+        trainingNum !== null && !isNaN(trainingNum) && trainingNum.trim() !== "" &&
+        sampleNum !== null && !isNaN(sampleNum) && sampleNum.trim() !== ""
+      ) {
+        // training番号を2桁に（例: 1 → 01）
+        const trainingStr = trainingNum.padStart(2, '0');
+
+        const baseURL = `https://3240683.github.io/www/training_js${trainingStr}/sample01-${sampleNum}.html`;
+
+        const link = document.getElementById("kadaiLink");
+        link.href = baseURL;
+        link.textContent = `課題 training_js${trainingStr}/sample01-${sampleNum}.html を開く`;
+      } else {
+        // 無効な入力時
+        const link = document.getElementById("kadaiLink");
+        link.textContent = "無効な入力です。ページを再読み込みしてください。";
+        link.removeAttribute("href");
+      }
+    };
+  </script>
 </body>
 </html>
-
-
-
-
