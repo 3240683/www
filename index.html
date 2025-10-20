@@ -24,7 +24,27 @@
 <body>
     <a href = "https://3240683.github.io/www/training_js01/sample01-1.html" target="_blank">課題チェック</a>
 </body>
+<script>
+        window.onload = function() {
+            let num = prompt("課題番号");
 
+            // 入力が数字であればリンクを更新
+            if (num !== null && !isNaN(num) && num.trim() !== "") {
+                const baseURL = "https://3240683.github.io/www/training_js01/sample01-";
+                const fullURL = `${baseURL}${num}.html`;
+
+                // aタグのhrefを更新
+                const link = document.getElementById("kadaiLink");
+                link.href = fullURL;
+                link.textContent = `課題 ${num} を開く`;
+            } else {
+                // 無効な入力だった場合
+                document.getElementById("kadaiLink").textContent = "無効な入力です。再読み込みしてください。";
+                document.getElementById("kadaiLink").removeAttribute("href");
+            }
+        }
+    </script>
 </html>
+
 
 
