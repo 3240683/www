@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配列の利用</title>
+    <style>
+    table th {
+        background-color: orange;
+        padding: 10px;
+    }
+    table td {
+        padding: 3px 10px;
+    }
+    table {
+        border-collapse: collapse;
+    }
+    td.line{
+        background-color: orange;
+    }
+    </style>
+</head>
+<body>
+    <h1>利用料の計算</h1>
+    <table border>
+        <tr>
+            <th>No.</th><th>料金(a)</th><th>人数(b)</th><th>a×b</th>
+        </tr>
+        <tr>
+            <td class="line">0</td><td>500</td><td>10</td><td><button onclick ="multiply(0);">利用料の合計</button></td>
+        </tr>
+        <tr>
+            <td class="line">1</td><td>980</td><td>16</td><td><button onclick ="multiply(1);">利用料の合計</button></td>
+        </tr>
+        <tr>
+            <td class="line">2</td><td>1200</td><td>8</td><td><button onclick ="multiply(2);">利用料の合計</button></td>
+        </tr>
+    </table>
+    <script>
+        let a = [500,980,1200];
+        let b = [10,16,8];
+        function multiply(i){
+            let answer;
+            answer = a[i] * b[i];
+            alert('料金は' + answer + '円です');
+        }
+    </script>
+</body>
+</html>
