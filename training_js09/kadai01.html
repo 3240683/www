@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>要素の追加と削除</title>
+    <style>
+        #continue{
+            text-decoration: underline;
+            cursor:pointer;
+        }
+    </style>
+</head>
+<body>
+    <h3>写真の一覧</h3>
+    <p>以下のボタンをクリックすると、写真が一覧表示されます。</p>
+    <button id="continue" onclick="showList()">写真を表示</button>
+
+    <script>
+        let list = ["photo_1.jpg","photo_2.jpg","photo_3.jpg","photo_4.jpg",
+                    "photo_5.jpg","photo_6.jpg","photo_7.jpg","photo_8.jpg"];
+
+        function showList(){
+            let ul = document.createElement("ul");
+
+            for(let i = 0; i < list.length; i++){
+                ul.insertAdjacentHTML("beforeend",
+                    `<img src="${list[i]}" alt="photo">`
+                );
+            }
+
+            document.body.appendChild(ul);
+            document.getElementById('continue').remove();
+        }
+    </script>
+</body>
+</html>
