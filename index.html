@@ -7,34 +7,32 @@
 </head>
 <body>
    <a id="kadaiLink" href="#" target="_blank">ここにリンクが表示されます</a>
+
   <script>
     window.onload = function () {
       const trainingNum = prompt("training の番号を入力してください");
-      const sampleNum = prompt("sample のすぐ後ろの番号を入力してください");
-      const fileNum = prompt("sample の最後の番号を入力してください");
+      const kadaiNum = prompt("kadai の番号を入力してください");
 
-      // 全ての入力が有効な数字かを確認
+      // 入力の確認
       if (
         trainingNum !== null && !isNaN(trainingNum) && trainingNum.trim() !== "" &&
-        sampleNum !== null && !isNaN(sampleNum) && sampleNum.trim() !== "" &&
-        fileNum !== null && !isNaN(fileNum) && fileNum.trim() !== ""
+        kadaiNum !== null && !isNaN(kadaiNum) && kadaiNum.trim() !== ""
       ) {
-        // training と sample の番号を2桁に整形（例: 1 → 01）
+        // 2桁に整形
         const trainingStr = trainingNum.padStart(2, '0');
-        const sampleStr = sampleNum.padStart(2, '0');
+        const kadaiStr = kadaiNum.padStart(2, '0');
 
         // 完成URL
-        const fullURL = `https://3240683.github.io/www/training_js${trainingStr}/sample${sampleStr}-${fileNum}.html`;
+        const fullURL = `https://3240683.github.io/www/training_js${trainingStr}/kadai${kadaiStr}.html`;
 
-        // リンクを更新
+        // リンク更新
         const link = document.getElementById("kadaiLink");
         link.href = fullURL;
-        link.textContent = `課題 training_js${trainingStr}/sample${sampleStr}-${fileNum}.html を開く`;
+        link.textContent = `課題 training_js${trainingStr}/kadai${kadaiStr}.html を開く`;
 
-        // 別タブで自動的に開く
+        // 別タブで開く
         window.open(fullURL, '_blank');
       } else {
-        // 無効な入力
         const link = document.getElementById("kadaiLink");
         link.textContent = "無効な入力です。ページを再読み込みしてください。";
         link.removeAttribute("href");
@@ -43,4 +41,3 @@
   </script>
 </body>
 </html>
-
