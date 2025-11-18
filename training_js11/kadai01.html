@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Click</title>
+    <style>
+        #message{
+            width: 650px;
+            padding: 15px;
+            margin: 25px 0px;
+            background-color: #FFCC99;
+        }
+    </style>
+</head>
+<body>
+    <h3>Click Counter★for構文</h3>
+    <p>ボタンをクリックすると、クリック回数に応じて結果が変わります。<br>
+        javascriptのfor構文を使って処理を作ってみましょう。</p>
+    <p>クリック回数<span id="num">0</span>回</p>
+    <button onclick="show()">クリック</button>
+    <div id="message">ここに結果が表示されます。</div>
+
+    <script>
+        let click = 0;
+        function show(){
+            click++;
+            for(let i = 1; i <= 6; i++){
+                if(click == 1){
+                    document.getElementById('message').textContent = ('★');
+                    document.getElementById('num').textContent = click;
+                }else if(click == 2){
+                    document.getElementById('message').textContent = ('★★★★★');
+                    document.getElementById('num').textContent = click;
+                }else if(click == 3){
+                    document.getElementById('message').textContent = '';
+                    for(let i = 1; i <= 5; i++){
+                        document.getElementById('message').textContent += (i + ' ');
+                    }
+                    document.getElementById('num').textContent = click;
+                }else if(click == 4){
+                    document.getElementById('message').textContent = '';
+                    for(let i = 1; i <= 10; i++){
+                        if(i % 2 == 0){
+                        document.getElementById('message').textContent += (i + ' ');
+                        }
+                    }
+                    document.getElementById('num').textContent = click;
+                }else if(click == 5){
+                    let sum = 0;
+                    document.getElementById('message').textContent = '';
+                    for(let i = 1; i <= click; i++){
+                        sum += i;
+                    }
+                    document.getElementById('message').textContent = (i);
+                    document.getElementById('num').textContent = click;
+                }else if(click <= 6){
+                    document.getElementById('message').textContent = ('クリアしました。カウントを0に戻します。');
+                    click = 0;
+                    document.getElementById('num').textContent = click;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

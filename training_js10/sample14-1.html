@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>条件分岐</title>
+    <style>
+        .big_font{
+            font-size:32px;
+            margin:25px;
+        }
+    </style>
+</head>
+<body>
+    <h3>問題</h3>
+    <p>次の方程式を満たす解を求めなさい。</p>
+    <p class="big_font">x+6=9</p>
+    <button onclick="check(1)">x = 1</button>
+    <button onclick="check(2)">x = 2</button>
+    <button onclick="check(3)">x = 3</button>
+    <button onclick="check(4)">x = 4</button>
+    <button onclick="check(5)">x = 5</button>
+    <div id="message" class="big_font"></div>
+
+    <script>
+        function check(x){
+            if(x == 3){
+                document.getElementById('message').textContent = '正解！';
+            }else{
+                document.getElementById('message').textContent = '間違い！';
+            }
+        }
+    </script>
+</body>
+</html>

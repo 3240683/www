@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>条件分岐</title>
+</head>
+<body>
+    <h1>レストランの予約</h1>
+    <p>人数を選択してください。</p>
+    <button onclick="showMsg(1)">1人</button>
+    <button onclick="showMsg(2)">2人</button>
+    <button onclick="showMsg(3)">3人</button>
+    <button onclick="showMsg(4)">4人</button>
+    <button onclick="showMsg(5)">5人</button>
+    <button onclick="showMsg(6)">6人</button>
+    <button onclick="showMsg(7)">7人</button>
+    <button onclick="showMsg(8)">8人</button>
+
+    <script>
+        function showMsg(n){
+            let text;
+            if(n == 1){
+                text = n + '人の場合は「カウンター席」へご案内します。';
+            }else if(n <= 4){
+                text = n + '人の場合は「テーブル席」へご案内します。';
+            }else{
+                text = n + '人の場合は「個室」へご案内します。'
+            }
+            alert(text);
+        }
+    </script>
+</body>
+</html>
