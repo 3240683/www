@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>toio & Switch Controller コネクター</title>
+  <meta name="description" content="Nintendo Switchのコントローラーでtoioコアキューブを操作するWebアプリケーション。Web BluetoothとGamepad APIを使用してワイヤレスで動かします。">
+  <link rel="stylesheet" href="style.css">
+  <!-- Google Fonts: Modern & Sci-Fi Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons (CDN) for UI icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="glow-bg"></div>
+  
+  <div class="app-container">
+    <header class="app-header">
+      <h1 id="app-title" class="neon-text">toio &amp; Switch Controller</h1>
+      <p class="subtitle">Web Bluetooth &amp; Gamepad API で toio を操縦しよう</p>
+    </header>
+
+    <main class="grid-container">
+      <!-- toio 接続 & 操作カード -->
+      <section class="card" id="toio-section">
+        <div class="card-header">
+          <i data-lucide="toy-brick" class="icon-toio"></i>
+          <h2>toio コア キューブ</h2>
+        </div>
+        
+        <div class="status-panel">
+          <div class="status-indicator" id="toio-status-indicator"></div>
+          <span class="status-text" id="toio-status-text">未接続</span>
+        </div>
+
+        <button id="btn-connect-toio" class="btn btn-primary">
+          <i data-lucide="bluetooth"></i> toio に接続する
+        </button>
+
+        <div class="control-group disabled-until-connected" id="toio-controls">
+          <h3>クイックアクション</h3>
+          <!-- LED点灯テスト -->
+          <div class="sub-group">
+            <label for="led-picker">LED カラー設定</label>
+            <div class="led-control-row">
+              <input type="color" id="led-picker" value="#00ffcc">
+              <div class="color-preset-container">
+                <button class="color-preset" style="background-color: #ff0055;" data-color="#ff0055" title="ネオンレッド"></button>
+                <button class="color-preset" style="background-color: #00c3e3;" data-color="#00c3e3" title="ネオンブルー"></button>
+                <button class="color-preset" style="background-color: #39ff14;" data-color="#39ff14" title="ネオングリーン"></button>
+                <button class="color-preset" style="background-color: #ff00ff;" data-color="#ff00ff" title="ネオンマゼンタ"></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- サウンドテスト -->
+          <div class="sub-group">
+            <label>効果音を鳴らす</label>
+            <div class="sound-grid">
+              <button class="btn btn-secondary btn-sm" id="btn-sound-up" data-sound="2">
+                <i data-lucide="volume-2"></i> 接続音
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-sound-level" data-sound="3">
+                <i data-lucide="volume-2"></i> レベルアップ
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-sound-coin" data-sound="9">
+                <i data-lucide="volume-2"></i> コイン音
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-sound-hit" data-sound="1">
+                <i data-lucide="volume-2"></i> ダメージ音
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- コントローラー 接続 & 情報カード -->
+      <section class="card" id="controller-section">
+        <div class="card-header">
+          <i data-lucide="gamepad-2" class="icon-controller"></i>
+          <h2>Switch コントローラー</h2>
+        </div>
+
+        <div class="status-panel">
+          <div class="status-indicator" id="pad-status-indicator"></div>
+          <span class="status-text" id="pad-status-text">コントローラー未検出</span>
+        </div>
+
+        <div class="controller-info" id="pad-info-box">
+          <p class="info-placeholder" id="pad-placeholder">
+            PCにコントローラーをペアリングし、いずれかのボタンを押してください。ブラウザが自動的に検知します。
+          </p>
+          <div class="controller-details hidden" id="pad-details">
+            <span class="controller-name" id="pad-name">Nintendo Switch Pro Controller</span>
+            
+            <!-- スティックのビジュアル表示 -->
+            <div class="stick-visualizer-container">
+              <div class="stick-box">
+                <span class="stick-label">左スティック (移動/旋回)</span>
+                <div class="analog-area" id="left-stick-area">
+                  <div class="analog-stick" id="left-stick"></div>
+                </div>
+                <span class="axis-values" id="left-axis-val">X: 0.00, Y: 0.00</span>
+              </div>
+            </div>
+
+            <!-- ボタン状態のビジュアル表示 -->
+            <div class="buttons-grid">
+              <div class="btn-node" id="btn-y">Y</div>
+              <div class="btn-node" id="btn-x">X</div>
+              <div class="btn-node" id="btn-b">B</div>
+              <div class="btn-node" id="btn-a">A</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 座標・バーチャルマップカード -->
+    <section class="card full-width" id="map-section">
+      <div class="card-header">
+        <i data-lucide="map"></i>
+        <h2>toio ポジション マップ</h2>
+      </div>
+      <div class="map-grid">
+        <!-- バーチャルマット(Canvas) -->
+        <div class="map-visual-container">
+          <canvas id="toio-map" width="400" height="400"></canvas>
+        </div>
+        <!-- 座標デジタルカウンター -->
+        <div class="coords-panel">
+          <div class="coord-item">
+            <span class="coord-label">X 座標 (マット上)</span>
+            <span class="coord-val" id="coord-x">---</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">Y 座標 (マット上)</span>
+            <span class="coord-val" id="coord-y">---</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">角度 (Angle)</span>
+            <span class="coord-val" id="coord-angle">---</span>
+          </div>
+          <div class="coord-status">
+            <span class="status-label">マット状態:</span>
+            <span class="status-val off-mat" id="coord-status-text">マット外</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- モーター速度インジケーター -->
+    <section class="card full-width" id="monitor-section">
+      <div class="card-header">
+        <i data-lucide="activity"></i>
+        <h2>リアルタイム・テレメトリ</h2>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry-item">
+          <span class="label">左モーター速度</span>
+          <div class="speed-bar-container">
+            <div class="speed-bar" id="left-speed-bar"></div>
+            <span class="speed-value" id="left-speed-val">0</span>
+          </div>
+        </div>
+        <div class="telemetry-item">
+          <span class="label">右モーター速度</span>
+          <div class="speed-bar-container">
+            <div class="speed-bar" id="right-speed-bar"></div>
+            <span class="speed-value" id="right-speed-val">0</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 操作ガイド & キーボード操作 -->
+    <footer class="app-footer">
+      <div class="guide-toggle" id="guide-toggle">
+        <i data-lucide="help-circle"></i> 操作方法・キーボードでの操作
+      </div>
+      <div class="guide-content hidden" id="guide-content">
+        <div class="guide-grid">
+          <div>
+            <h4>🎮 コントローラー操作</h4>
+            <ul>
+              <li><strong>左スティック:</strong> 前進 / 後退 / 旋回</li>
+              <li><strong>A ボタン:</strong> LED緑点灯 ＋ 接続音</li>
+              <li><strong>B ボタン:</strong> LED赤点灯 ＋ ダメージ音</li>
+              <li><strong>X ボタン:</strong> LED青点灯 ＋ レベルアップ音</li>
+              <li><strong>Y ボタン:</strong> LED黄点灯 ＋ コイン音</li>
+            </ul>
+          </div>
+          <div>
+            <h4>⌨️ キーボード操作 (フォールバック)</h4>
+            <ul>
+              <li><strong>W / ↑ :</strong> 前進</li>
+              <li><strong>S / ↓ :</strong> 後退</li>
+              <li><strong>A / ← :</strong> 左旋回</li>
+              <li><strong>D / → :</strong> 右旋回</li>
+              <li><strong>1, 2, 3, 4:</strong> LEDカラーチェンジ＆効果音</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="system-logs">
+        <div class="log-header">
+          <span>システムログ</span>
+          <button id="btn-clear-logs" class="btn-clear">クリア</button>
+        </div>
+        <div class="log-content" id="log-box">
+          <div class="log-line system">システムを初期化しました。</div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    // Lucideアイコンの初期化
+    lucide.createIcons();
+  </script>
+</body>
+</html>
