@@ -118,6 +118,39 @@
       </section>
     </main>
 
+    <!-- 座標・バーチャルマップカード -->
+    <section class="card full-width" id="map-section">
+      <div class="card-header">
+        <i data-lucide="map"></i>
+        <h2>toio ポジション マップ</h2>
+      </div>
+      <div class="map-grid">
+        <!-- バーチャルマット(Canvas) -->
+        <div class="map-visual-container">
+          <canvas id="toio-map" width="400" height="400"></canvas>
+        </div>
+        <!-- 座標デジタルカウンター -->
+        <div class="coords-panel">
+          <div class="coord-item">
+            <span class="coord-label">X 座標 (マット上)</span>
+            <span class="coord-val" id="coord-x">---</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">Y 座標 (マット上)</span>
+            <span class="coord-val" id="coord-y">---</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">角度 (Angle)</span>
+            <span class="coord-val" id="coord-angle">---</span>
+          </div>
+          <div class="coord-status">
+            <span class="status-label">マット状態:</span>
+            <span class="status-val off-mat" id="coord-status-text">マット外</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- モーター速度インジケーター -->
     <section class="card full-width" id="monitor-section">
       <div class="card-header">

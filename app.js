@@ -3,12 +3,14 @@
  * ----------------------------------------------------
  * Web Bluetooth API を用いて toio コア キューブを制御し、
  * Web Gamepad API を用いて Nintendo Switch コントローラーの入力を反映させます。
+ * さらに toio のIDセンサー情報を読み取り、マット上の座標と角度を可視化します。
  */
 
 // ==========================================================================
 // BLE UUID定義 (toio仕様準拠)
 // ==========================================================================
 const TOIO_SERVICE_UUID = '10b20100-5b3b-4571-9508-cf3efcd7bbae';
+const ID_CHAR_UUID      = '10b20101-5b3b-4571-9508-cf3efcd7bbae'; // IDリーダー
 const MOTOR_CHAR_UUID   = '10b20102-5b3b-4571-9508-cf3efcd7bbae';
 const LED_CHAR_UUID     = '10b20103-5b3b-4571-9508-cf3efcd7bbae';
 const SOUND_CHAR_UUID   = '10b20104-5b3b-4571-9508-cf3efcd7bbae';
@@ -17,10 +19,17 @@ const SOUND_CHAR_UUID   = '10b20104-5b3b-4571-9508-cf3efcd7bbae';
 // 状態管理変数
 // ==========================================================================
 let toioDevice = null;
+let idCharacteristic = null;
 let motorCharacteristic = null;
 let ledCharacteristic = null;
 let soundCharacteristic = null;
 let isConnectedToio = false;
+
+// 位置情報管理
+let currentX = null;
+let currentY = null;
+let currentAngle = null;
+let isToioOnMat = false;
 
 // ゲームパッド関連
 let activeGamepadIndex = null;
@@ -69,6 +78,20 @@ const btnClearLogs = document.getElementById('btn-clear-logs');
 const guideToggle = document.getElementById('guide-toggle');
 const guideContent = document.getElementById('guide-content');
 
+// 座標表示用DOM
+const coordX = document.getElementById('coord-x');
+const coordY = document.getElementById('coord-y');
+const coordAngle = document.getElementById('coord-angle');
+const coordStatusText = document.getElementById('coord-status-text');
+const mapCanvas = document.getElementById('toio-map');
+const ctx = mapCanvas.getContext('2d');
+
+// toioの標準マット座標範囲
+const MIN_MAT_X = 45;
+const MAX_MAT_X = 455;
+const MIN_MAT_Y = 45;
+const MAX_MAT_Y = 455;
+
 // ==========================================================================
 // ログ出力用ユーティリティ
 // ==========================================================================
@@ -82,6 +105,126 @@ function addLog(message, type = 'info') {
   logBox.appendChild(line);
   logBox.scrollTop = logBox.scrollHeight;
 }
+
+// ==========================================================================
+// マップ描画ロジック (2D Canvas)
+// ==========================================================================
+function initMapCanvas() {
+  drawMap(null, null, null, false);
+}
+
+/**
+ * Canvasにマットとtoioを描画
+ */
+function drawMap(x, y, angle, isOnMat) {
+  const width = mapCanvas.width;
+  const height = mapCanvas.height;
+  
+  // 1. 背景のクリア
+  ctx.fillStyle = '#0d0f1a';
+  ctx.fillRect(0, 0, width, height);
+  
+  // 2. グリッド線（目盛り）の描画
+  ctx.strokeStyle = 'rgba(0, 195, 227, 0.08)';
+  ctx.lineWidth = 1;
+  const gridSize = 40;
+  for (let i = 0; i < width; i += gridSize) {
+    // 縦線
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, height);
+    ctx.stroke();
+    // 横線
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(width, i);
+    ctx.stroke();
+  }
+
+  // 3. 有効なマット範囲を示す枠線の描画
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, 20, width - 40, height - 40);
+
+  // マットのラベル
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.font = '10px Inter';
+  ctx.textAlign = 'center';
+  ctx.fillText('TOIO PLAY MAT AREA', width / 2, 35);
+  
+  // 4. toio本体の描画 (座標が検出されている場合)
+  if (isOnMat && x !== null && y !== null && angle !== null) {
+    // マット座標(MIN-MAX)をCanvas座標(20〜width-20)へマッピング
+    const canvasX = mapRange(x, MIN_MAT_X, MAX_MAT_X, 20, width - 20);
+    const canvasY = mapRange(y, MIN_MAT_Y, MAX_MAT_Y, 20, height - 20);
+    
+    ctx.save();
+    ctx.translate(canvasX, canvasY);
+    // toioの角度系は0度＝東(右向き)、時計回りが正
+    // Canvasの回転も同様にラジアンに変換
+    ctx.rotate((angle * Math.PI) / 180);
+    
+    // toioコアキューブ本体 (約25x25ピクセル四方)
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = 'rgba(0, 195, 227, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(-13, -13, 26, 26, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0; // シャドウリセット
+    
+    // タイヤ部分 (左右の黒い細四角)
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(-8, -15, 16, 2); // 左タイヤ
+    ctx.fillRect(-8, 13, 16, 2);  // 右タイヤ
+
+    // 前部を示す印（目の代わりになるネオンブルーのドットまたは三角）
+    ctx.fillStyle = 'var(--neon-blue)';
+    ctx.beginPath();
+    ctx.moveTo(8, -6);
+    ctx.lineTo(13, 0);
+    ctx.lineTo(8, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // 進行方向を示す矢印の描画
+    ctx.strokeStyle = 'var(--neon-blue)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-5, 0);
+    ctx.lineTo(8, 0);
+    ctx.stroke();
+
+    ctx.restore();
+    
+    // 座標プロット位置のガイドライン
+    ctx.strokeStyle = 'rgba(0, 195, 227, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    // Xガイド線
+    ctx.beginPath();
+    ctx.moveTo(canvasX, 0);
+    ctx.lineTo(canvasX, height);
+    ctx.stroke();
+    // Yガイド線
+    ctx.beginPath();
+    ctx.moveTo(0, canvasY);
+    ctx.lineTo(width, canvasY);
+    ctx.stroke();
+    ctx.setLineDash([]); // ダッシュ解除
+  }
+}
+
+/**
+ * 範囲変換用ヘルパー関数
+ */
+function mapRange(value, inMin, inMax, outMin, outMax) {
+  const result = outMin + ((value - inMin) * (outMax - outMin)) / (inMax - inMin);
+  return Math.max(outMin, Math.min(outMax, result));
+}
+
+// 初期化実行
+initMapCanvas();
 
 // ==========================================================================
 // toio (Web Bluetooth) 制御ロジック
@@ -113,9 +256,15 @@ async function connectToio() {
     const service = await server.getPrimaryService(TOIO_SERVICE_UUID);
 
     addLog("キャラクタリスティックを取得中...", "system");
+    idCharacteristic = await service.getCharacteristic(ID_CHAR_UUID);
     motorCharacteristic = await service.getCharacteristic(MOTOR_CHAR_UUID);
     ledCharacteristic = await service.getCharacteristic(LED_CHAR_UUID);
     soundCharacteristic = await service.getCharacteristic(SOUND_CHAR_UUID);
+
+    // IDリーダーの通知開始
+    addLog("IDセンサー通知登録中...", "system");
+    await idCharacteristic.startNotifications();
+    idCharacteristic.addEventListener('characteristicvaluechanged', handleIdNotification);
 
     isConnectedToio = true;
     updateToioUI(true);
@@ -145,10 +294,18 @@ function disconnectToio() {
 function onToioDisconnected() {
   isConnectedToio = false;
   toioDevice = null;
+  idCharacteristic = null;
   motorCharacteristic = null;
   ledCharacteristic = null;
   soundCharacteristic = null;
+  
+  isToioOnMat = false;
+  currentX = null;
+  currentY = null;
+  currentAngle = null;
+  
   updateToioUI(false);
+  updateCoordinatesUI(null, null, null, false);
   addLog("toioコアキューブとの接続が解除されました。", "error");
 }
 
@@ -170,18 +327,71 @@ function updateToioUI(connected) {
     btnConnectToio.style.boxShadow = '0 4px 15px var(--shadow-blue)';
     toioControls.classList.add('disabled-until-connected');
     
-    // テレメトリをリセット
+    // テレメトリとマップをリセット
     updateTelemetry(0, 0);
+    initMapCanvas();
   }
   lucide.createIcons();
 }
 
+// ==========================================================================
+// IDリーダー センサー値の通知処理
+// ==========================================================================
+function handleIdNotification(event) {
+  const data = event.target.value;
+  if (data.byteLength < 1) return;
+
+  const infoType = data.getUint8(0);
+
+  if (infoType === 0x01) {
+    // Position ID（マットの上に乗っている状態）
+    if (data.byteLength < 7) return;
+
+    // リトルエンディアンでデータをパース
+    const x = data.getUint16(1, true);
+    const y = data.getUint16(3, true);
+    const angle = data.getUint16(5, true);
+
+    currentX = x;
+    currentY = y;
+    currentAngle = angle;
+    isToioOnMat = true;
+
+    updateCoordinatesUI(x, y, angle, true);
+  } else if (infoType === 0x03) {
+    // Position ID Missed（マットから離れた状態）
+    isToioOnMat = false;
+    updateCoordinatesUI(null, null, null, false);
+  }
+}
+
+/**
+ * 座標表示UIとCanvasの更新
+ */
+function updateCoordinatesUI(x, y, angle, isOnMat) {
+  if (isOnMat) {
+    coordX.textContent = x;
+    coordY.textContent = y;
+    coordAngle.textContent = `${angle}°`;
+    coordStatusText.textContent = "マット内";
+    coordStatusText.className = "status-val on-mat";
+    
+    // マップ描画更新
+    drawMap(x, y, angle, true);
+  } else {
+    coordX.textContent = "---";
+    coordY.textContent = "---";
+    coordAngle.textContent = "---";
+    coordStatusText.textContent = "マット外";
+    coordStatusText.className = "status-val off-mat";
+    
+    // 前回の座標情報を元に半透明で表示したままにするか、クリアする
+    drawMap(currentX, currentY, currentAngle, false);
+  }
+}
+
 /**
  * モーターの制御コマンドを送信
- * @param {number} leftSpeed - 左モーター速度 (0-255)
- * @param {number} leftDir - 左モーター方向 (1: 前進, 2: 後退)
- * @param {number} rightSpeed - 右モーター速度 (0-255)
- * @param {number} rightDir - 右モーター方向 (1: 前進, 2: 後退)
  */
 async function controlMotors(leftSpeed, leftDir, rightSpeed, rightDir) {
   if (!motorCharacteristic || !isConnectedToio) return;
@@ -373,8 +583,6 @@ function pollGamepadLoop() {
  */
 function handleGamepadInput(gp) {
   // --- A) アナログスティックの取得 (左スティックを標準とする) ---
-  // standard mappingの場合: axes[0]がX軸、axes[1]がY軸
-  // DirectInputなどの場合も大体最初の2軸が左スティック
   let axisX = gp.axes[0] || 0;
   let axisY = gp.axes[1] || 0;
 
@@ -387,26 +595,19 @@ function handleGamepadInput(gp) {
   updateVirtualStickUI(xValue, yValue);
 
   // --- B) ボタン入力の監視 (A, B, X, Y) ---
-  // WindowsのGamepad APIにおける標準マッピング：
-  // buttons[0] = A/B (下)
-  // buttons[1] = B/A (右)
-  // buttons[2] = X/Y (左)
-  // buttons[3] = Y/X (上)
-  // ※OSや接続モードにより入れ替わるため、画面の光り方を連動させます。
   const buttonMap = {
-    A: gp.buttons[1] || gp.buttons[0] || { pressed: false }, // 通常、Aはインデックス1または0
+    A: gp.buttons[1] || gp.buttons[0] || { pressed: false },
     B: gp.buttons[0] || gp.buttons[1] || { pressed: false },
     X: gp.buttons[3] || gp.buttons[2] || { pressed: false },
     Y: gp.buttons[2] || gp.buttons[3] || { pressed: false }
   };
   
-  // もし mapping が "standard" でない場合、独自に調整
+  // マッピングの調整
   let btnA = gp.buttons[1]?.pressed || false;
   let btnB = gp.buttons[0]?.pressed || false;
   let btnX = gp.buttons[3]?.pressed || false;
   let btnY = gp.buttons[2]?.pressed || false;
   
-  // Joy-Con(L)単体や一部マッピングでインデックスが異なる場合のフォールバック
   if (gp.buttons.length < 4) {
     btnA = gp.buttons[0]?.pressed || false;
     btnB = gp.buttons[1]?.pressed || false;
@@ -440,8 +641,6 @@ function handleGamepadInput(gp) {
 
   // キーボードが現在アクティブでなければ、スティック値を元にモーター速度を計算
   if (!isKeyboardControlling()) {
-    // Y軸は上がマイナス方向なので符号反転。
-    // xValueは旋回（右がプラス、左がマイナス）
     const steerY = -yValue; // 前進方向: +1.0, 後退方向: -1.0
     const steerX = xValue;  // 右旋回: +1.0, 左旋回: -1.0
 
@@ -453,7 +652,7 @@ function handleGamepadInput(gp) {
     leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
     rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
 
-    // toioの速度スケール（0〜85程度に設定。制御しやすくするため最大115より少し下げる）
+    // toioの速度スケール (最大速度を少し抑えた85)
     const SPEED_SCALE = 85; 
     
     // スティック入力が極めて小さいときは完全に停止させる
@@ -496,7 +695,6 @@ function detectButtonPress(btnId, isPressed, callback) {
  * バーチャルスティックのUI位置更新
  */
 function updateVirtualStickUI(x, y) {
-  // スティックスペースの最大半径 (px)
   const MAX_RADIUS = 26;
   const targetX = x * MAX_RADIUS;
   const targetY = y * MAX_RADIUS;
@@ -528,7 +726,6 @@ function toggleBtnClass(elementId, isPressed) {
 // キーボード操作ロジック (フォールバック)
 // ==========================================================================
 window.addEventListener('keydown', (e) => {
-  // 入力フォーム等で打たれている場合は無視
   if (e.target.tagName === 'INPUT') return;
 
   if (e.key in keysPressed || e.key === 'w' || e.key === 's' || e.key === 'a' || e.key === 'd') {
@@ -564,7 +761,6 @@ function isKeyboardControlling() {
 
 function processKeyboardDrive() {
   if (!isKeyboardControlling()) {
-    // キーが何も押されていなければ停止
     if (activeGamepadIndex === null) {
       controlMotors(0, 1, 0, 1);
       updateTelemetry(0, 0);
@@ -572,7 +768,6 @@ function processKeyboardDrive() {
     return;
   }
 
-  // キーの組み合わせによる操作コマンドの計算
   const fwd = keysPressed.w || keysPressed.ArrowUp;
   const bwd = keysPressed.s || keysPressed.ArrowDown;
   const left = keysPressed.a || keysPressed.ArrowLeft;
@@ -583,21 +778,17 @@ function processKeyboardDrive() {
   let leftDir = 1;
   let rightDir = 1;
   
-  // 操縦パラメータ
-  const DRIVE_SPEED = 60; // キーボード時の走行速度
-  const TURN_SPEED = 40;  // 旋回時の走行速度
+  const DRIVE_SPEED = 60;
+  const TURN_SPEED = 40;
 
   if (fwd && !bwd) {
     if (left && !right) {
-      // 左前進旋回
       leftSpeed = TURN_SPEED;
       rightSpeed = DRIVE_SPEED;
     } else if (right && !left) {
-      // 右前進旋回
       leftSpeed = DRIVE_SPEED;
       rightSpeed = TURN_SPEED;
     } else {
-      // 直進前進
       leftSpeed = DRIVE_SPEED;
       rightSpeed = DRIVE_SPEED;
     }
@@ -605,28 +796,23 @@ function processKeyboardDrive() {
     rightDir = 1;
   } else if (bwd && !fwd) {
     if (left && !right) {
-      // 左後退旋回
       leftSpeed = TURN_SPEED;
       rightSpeed = DRIVE_SPEED;
     } else if (right && !left) {
-      // 右後退旋回
       leftSpeed = DRIVE_SPEED;
       rightSpeed = TURN_SPEED;
     } else {
-      // 直進後退
       leftSpeed = DRIVE_SPEED;
       rightSpeed = DRIVE_SPEED;
     }
     leftDir = 2;
     rightDir = 2;
   } else if (left && !right) {
-    // 超信地左旋回 (その場で左回転)
     leftSpeed = TURN_SPEED;
     rightSpeed = TURN_SPEED;
     leftDir = 2;
     rightDir = 1;
   } else if (right && !left) {
-    // 超信地右旋回 (その場で右回転)
     leftSpeed = TURN_SPEED;
     rightSpeed = TURN_SPEED;
     leftDir = 1;
@@ -635,7 +821,6 @@ function processKeyboardDrive() {
 
   controlMotors(leftSpeed, leftDir, rightSpeed, rightDir);
 
-  // テレメトリの更新
   const signedLeft = leftDir === 1 ? leftSpeed : -leftSpeed;
   const signedRight = rightDir === 1 ? rightSpeed : -rightSpeed;
   updateTelemetry(signedLeft, signedRight);
@@ -645,7 +830,6 @@ function processKeyboardDrive() {
 // テレメトリ UI 更新ロジック
 // ==========================================================================
 function updateTelemetry(leftSpeed, rightSpeed) {
-  // leftSpeed, rightSpeed は -255〜255 (符号で前後を示す)
   updateSpeedBar(leftSpeedBar, leftSpeedVal, leftSpeed);
   updateSpeedBar(rightSpeedBar, rightSpeedVal, rightSpeed);
 }
@@ -654,7 +838,6 @@ function updateSpeedBar(barEl, valEl, speed) {
   const percent = Math.min(100, Math.round((Math.abs(speed) / 115) * 100));
   barEl.style.width = `${percent}%`;
   
-  // 前進と後退で色を切り替える
   if (speed > 0) {
     barEl.style.background = 'linear-gradient(90deg, var(--neon-blue), var(--neon-green))';
     valEl.textContent = `+${speed}`;
