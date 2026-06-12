@@ -73,6 +73,15 @@ const SHUFFLE_DURATION_MS = 4000; // 操作が狂う時間 (4秒)
 let cooldownTimer = null;          // 自動復旧用タイマー
 let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
 
+// タイムアタック関連変数
+let taState = 'idle'; // 'idle' | 'ready' | 'countdown' | 'running' | 'finished'
+let taStartTime = 0;
+let taElapsedTime = 0;
+let taTimerInterval = null;
+let taCountdownTimer = null;
+let taCountdownVal = 3;
+let taBestTime = localStorage.getItem('toio_ta_best') !== null ? parseFloat(localStorage.getItem('toio_ta_best')) : null;
+
 // 送信制御（スロットリング＆変更検知）
 let lastLeftSpeed = 0;
 let lastLeftDir = 1;
@@ -132,6 +141,14 @@ const chkShuffleEnable = document.getElementById('chk-shuffle-enable');
 const shuffleStatusPanel = document.getElementById('shuffle-status-panel');
 const shuffleStatusText = document.getElementById('shuffle-status-text');
 const shuffleIcon = document.getElementById('shuffle-icon');
+
+// タイムアタック用DOM
+const taStatus = document.getElementById('ta-status');
+const taTimer = document.getElementById('ta-timer');
+const taBest = document.getElementById('ta-best');
+const btnResetBest = document.getElementById('btn-reset-best');
+const countdownOverlay = document.getElementById('countdown-overlay');
+const countdownNumber = document.getElementById('countdown-number');
 
 // ==========================================================================
 // ログ出力用ユーティリティ
@@ -284,8 +301,15 @@ function handleIdNotification(event) {
     currentAngle = angle;
     isToioOnMat = true;
 
-    // トラップ発動判定
-    if (isShuffleEnabled && !isShuffleCooldown) {
+    // タイムアタック：スタートカード（→）とゴールカード（!）の検知処理
+    if (cardMark === '→') {
+      setupTimeAttack();
+    } else if (cardMark === '!' && taState === 'running') {
+      finishTimeAttack();
+    }
+
+    // トラップ発動判定（スタート位置とゴール位置では操作シャッフルを発動させない）
+    if (isShuffleEnabled && !isShuffleCooldown && cardMark !== '→' && cardMark !== '!') {
       triggerShuffleGimmick(`簡易カード [${cardMark}]`);
     }
 
@@ -753,6 +777,15 @@ function handleGamepadInput(gp) {
     playSound(9);
   });
 
+  // 上ボタン(12)と下ボタン(13)の同時押しによるカウントダウン開始判定
+  if (gp.buttons.length > 13) {
+    const dpadUp = gp.buttons[12]?.pressed || false;
+    const dpadDown = gp.buttons[13]?.pressed || false;
+    if (dpadUp && dpadDown && taState === 'ready') {
+      startCountdown();
+    }
+  }
+
   if (Math.abs(xValue) > 0 || Math.abs(yValue) > 0) {
     if (isRandomDriving) {
       stopRandomDrive("コントローラーのスティック操作");
@@ -760,42 +793,47 @@ function handleGamepadInput(gp) {
   }
 
   if (!isKeyboardControlling() && !isRandomDriving) {
-    const steerY = -yValue; 
-    const steerX = xValue;  
+    // タイムアタックでカウントダウン中、または準備中（フライング防止）は操縦入力をロック
+    const isTaLocked = (taState === 'ready' || taState === 'countdown');
 
-    const in_n = Math.max(0, steerY);
-    const in_s = Math.max(0, -steerY);
-    const in_e = Math.max(0, steerX);
-    const in_w = Math.max(0, -steerX);
-
-    let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
-    
-    if (currentMapping.n === 'n') act_n += in_n; else if (currentMapping.n === 's') act_s += in_n; else if (currentMapping.n === 'e') act_e += in_n; else if (currentMapping.n === 'w') act_w += in_n;
-    if (currentMapping.s === 'n') act_n += in_s; else if (currentMapping.s === 's') act_s += in_s; else if (currentMapping.s === 'e') act_e += in_s; else if (currentMapping.s === 'w') act_w += in_s;
-    if (currentMapping.e === 'n') act_n += in_e; else if (currentMapping.e === 's') act_s += in_e; else if (currentMapping.e === 'e') act_e += in_e; else if (currentMapping.e === 'w') act_w += in_e;
-    if (currentMapping.w === 'n') act_n += in_w; else if (currentMapping.w === 's') act_s += in_w; else if (currentMapping.w === 'e') act_e += in_w; else if (currentMapping.w === 'w') act_w += in_w;
-
-    let leftMotor = act_n - act_s + act_e - act_w;
-    let rightMotor = act_n - act_s - act_e + act_w;
-
-    leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
-    rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
-
-    const SPEED_SCALE = 85; 
-    
     let leftSpeed = 0;
     let rightSpeed = 0;
     let leftDir = 1;
     let rightDir = 1;
 
-    if (Math.abs(leftMotor) > 0.05) {
-      leftSpeed = Math.round(Math.abs(leftMotor) * SPEED_SCALE);
-      leftDir = leftMotor >= 0 ? 1 : 2;
-    }
-    
-    if (Math.abs(rightMotor) > 0.05) {
-      rightSpeed = Math.round(Math.abs(rightMotor) * SPEED_SCALE);
-      rightDir = rightMotor >= 0 ? 1 : 2;
+    if (!isTaLocked) {
+      const steerY = -yValue; 
+      const steerX = xValue;  
+
+      const in_n = Math.max(0, steerY);
+      const in_s = Math.max(0, -steerY);
+      const in_e = Math.max(0, steerX);
+      const in_w = Math.max(0, -steerX);
+
+      let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
+      
+      if (currentMapping.n === 'n') act_n += in_n; else if (currentMapping.n === 's') act_s += in_n; else if (currentMapping.n === 'e') act_e += in_n; else if (currentMapping.n === 'w') act_w += in_n;
+      if (currentMapping.s === 'n') act_n += in_s; else if (currentMapping.s === 's') act_s += in_s; else if (currentMapping.s === 'e') act_e += in_s; else if (currentMapping.s === 'w') act_w += in_s;
+      if (currentMapping.e === 'n') act_n += in_e; else if (currentMapping.e === 's') act_s += in_e; else if (currentMapping.e === 'e') act_e += in_e; else if (currentMapping.e === 'w') act_w += in_e;
+      if (currentMapping.w === 'n') act_n += in_w; else if (currentMapping.w === 's') act_s += in_w; else if (currentMapping.w === 'e') act_e += in_w; else if (currentMapping.w === 'w') act_w += in_w;
+
+      let leftMotor = act_n - act_s + act_e - act_w;
+      let rightMotor = act_n - act_s - act_e + act_w;
+
+      leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
+      rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
+
+      const SPEED_SCALE = 85; 
+      
+      if (Math.abs(leftMotor) > 0.05) {
+        leftSpeed = Math.round(Math.abs(leftMotor) * SPEED_SCALE);
+        leftDir = leftMotor >= 0 ? 1 : 2;
+      }
+      
+      if (Math.abs(rightMotor) > 0.05) {
+        rightSpeed = Math.round(Math.abs(rightMotor) * SPEED_SCALE);
+        rightDir = rightMotor >= 0 ? 1 : 2;
+      }
     }
 
     controlMotors(leftSpeed, leftDir, rightSpeed, rightDir);
@@ -854,6 +892,14 @@ window.addEventListener('keydown', (e) => {
       stopRandomDrive("キーボード操作");
     }
     keysPressed[e.key] = true;
+
+    // タイムアタック：上(W/↑)と下(S/↓)の同時押し検知
+    const isUpPressed = keysPressed.w || keysPressed.ArrowUp;
+    const isDownPressed = keysPressed.s || keysPressed.ArrowDown;
+    if (isUpPressed && isDownPressed && taState === 'ready') {
+      startCountdown();
+    }
+
     processKeyboardDrive();
   }
 
@@ -894,30 +940,40 @@ function processKeyboardDrive() {
     return;
   }
 
-  const fwd = keysPressed.w || keysPressed.ArrowUp ? 1.0 : 0.0;
-  const bwd = keysPressed.s || keysPressed.ArrowDown ? 1.0 : 0.0;
-  const left = keysPressed.a || keysPressed.ArrowLeft ? 1.0 : 0.0;
-  const right = keysPressed.d || keysPressed.ArrowRight ? 1.0 : 0.0;
+  // タイムアタックでカウントダウン中、または準備中（フライング防止）は操縦入力をロック
+  const isTaLocked = (taState === 'ready' || taState === 'countdown');
 
-  let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
-  
-  if (currentMapping.n === 'n') act_n += fwd; else if (currentMapping.n === 's') act_s += fwd; else if (currentMapping.n === 'e') act_e += fwd; else if (currentMapping.n === 'w') act_w += fwd;
-  if (currentMapping.s === 'n') act_n += bwd; else if (currentMapping.s === 's') act_s += bwd; else if (currentMapping.s === 'e') act_e += bwd; else if (currentMapping.s === 'w') act_w += bwd;
-  if (currentMapping.e === 'n') act_n += right; else if (currentMapping.e === 's') act_s += right; else if (currentMapping.e === 'e') act_e += right; else if (currentMapping.e === 'w') act_w += right;
-  if (currentMapping.w === 'n') act_n += left; else if (currentMapping.w === 's') act_s += left; else if (currentMapping.w === 'e') act_e += left; else if (currentMapping.w === 'w') act_w += left;
+  let leftSpeed = 0;
+  let rightSpeed = 0;
+  let leftDir = 1;
+  let rightDir = 1;
 
-  let leftMotor = act_n - act_s + act_e - act_w;
-  let rightMotor = act_n - act_s - act_e + act_w;
+  if (!isTaLocked) {
+    const fwd = keysPressed.w || keysPressed.ArrowUp ? 1.0 : 0.0;
+    const bwd = keysPressed.s || keysPressed.ArrowDown ? 1.0 : 0.0;
+    const left = keysPressed.a || keysPressed.ArrowLeft ? 1.0 : 0.0;
+    const right = keysPressed.d || keysPressed.ArrowRight ? 1.0 : 0.0;
 
-  leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
-  rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
-  
-  const DRIVE_SPEED = 60;
+    let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
+    
+    if (currentMapping.n === 'n') act_n += fwd; else if (currentMapping.n === 's') act_s += fwd; else if (currentMapping.n === 'e') act_e += fwd; else if (currentMapping.n === 'w') act_w += fwd;
+    if (currentMapping.s === 'n') act_n += bwd; else if (currentMapping.s === 's') act_s += bwd; else if (currentMapping.s === 'e') act_e += bwd; else if (currentMapping.s === 'w') act_w += bwd;
+    if (currentMapping.e === 'n') act_n += right; else if (currentMapping.e === 's') act_s += right; else if (currentMapping.e === 'e') act_e += right; else if (currentMapping.e === 'w') act_w += right;
+    if (currentMapping.w === 'n') act_n += left; else if (currentMapping.w === 's') act_s += left; else if (currentMapping.w === 'e') act_e += left; else if (currentMapping.w === 'w') act_w += left;
 
-  let leftSpeed = Math.round(Math.abs(leftMotor) * DRIVE_SPEED);
-  let rightSpeed = Math.round(Math.abs(rightMotor) * DRIVE_SPEED);
-  let leftDir = leftMotor >= 0 ? 1 : 2;
-  let rightDir = rightMotor >= 0 ? 1 : 2;
+    let leftMotor = act_n - act_s + act_e - act_w;
+    let rightMotor = act_n - act_s - act_e + act_w;
+
+    leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
+    rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
+    
+    const DRIVE_SPEED = 60;
+
+    leftSpeed = Math.round(Math.abs(leftMotor) * DRIVE_SPEED);
+    rightSpeed = Math.round(Math.abs(rightMotor) * DRIVE_SPEED);
+    leftDir = leftMotor >= 0 ? 1 : 2;
+    rightDir = rightMotor >= 0 ? 1 : 2;
+  }
 
   controlMotors(leftSpeed, leftDir, rightSpeed, rightDir);
 }
@@ -944,3 +1000,197 @@ guideToggle.addEventListener('click', () => {
   const isHidden = guideContent.classList.contains('hidden');
   addLog(`ヘルプガイドを${isHidden ? '閉じました' : '開きました'}。`, "system");
 });
+
+// ==========================================================================
+// タイムアタック (Time Attack) 制御ロジック
+// ==========================================================================
+
+// 初期ロード時のベストタイム表示
+function initTaBestTimeDisplay() {
+  if (taBestTime !== null) {
+    taBest.textContent = formatTime(taBestTime);
+  } else {
+    taBest.textContent = "--:--.--";
+  }
+}
+
+// タイムアタック初期設定 (→ カード検知時)
+function setupTimeAttack() {
+  if (taState === 'ready') return; // すでに準備完了なら何もしない
+
+  stopRandomDrive(); // 自律走行中なら停止
+  stopShuffleGimmick(); // 操作シャッフルを解除・リセット
+
+  if (taTimerInterval) {
+    cancelAnimationFrame(taTimerInterval);
+    taTimerInterval = null;
+  }
+  if (taCountdownTimer) {
+    clearTimeout(taCountdownTimer);
+    taCountdownTimer = null;
+  }
+
+  taState = 'ready';
+  taElapsedTime = 0;
+  
+  taTimer.textContent = "00:00.00";
+  countdownOverlay.classList.add('hidden');
+  
+  updateTaUI();
+  
+  addLog("🏁 スタート位置 [→] を検出：操作初期化＆タイマーをリセットしました。", "success");
+  addLog("👉 コントローラーの「上＋下」同時押し（キーボードはW＋S / ↑＋↓）でスタート！", "system");
+  
+  playSound(2); // 接続音
+  setLED(255, 230, 0, 0); // ネオンイエロー点灯
+}
+
+// 3秒カウントダウン開始
+function startCountdown() {
+  if (taState !== 'ready') return;
+
+  taState = 'countdown';
+  taCountdownVal = 3;
+  
+  updateTaUI();
+  
+  countdownOverlay.classList.remove('hidden');
+  countdownNumber.textContent = taCountdownVal;
+  
+  addLog("⏳ スタートカウントダウンを開始します...", "system");
+  playSound(1); // ピッ
+  setLED(255, 0, 0, 50); // カウントダウン中赤点灯
+
+  taCountdownTimer = setTimeout(tickCountdown, 1000);
+}
+
+function tickCountdown() {
+  taCountdownVal--;
+  if (taCountdownVal > 0) {
+    countdownNumber.textContent = taCountdownVal;
+    playSound(1); // ピッ
+    taCountdownTimer = setTimeout(tickCountdown, 1000);
+  } else {
+    // GO!
+    countdownNumber.textContent = "GO!";
+    playSound(3); // ファンファーレ（レベルアップ音）
+    setLED(57, 255, 20, 0); // ネオングリーン
+
+    startTaTimer();
+
+    // 1秒後にオーバーレイを隠す
+    taCountdownTimer = setTimeout(() => {
+      countdownOverlay.classList.add('hidden');
+    }, 1000);
+  }
+}
+
+// タイマースタート
+function startTaTimer() {
+  taState = 'running';
+  updateTaUI();
+  
+  taStartTime = performance.now();
+  addLog("🚀 タイマースタート！ゴール [!] を目指して操縦してください！", "success");
+  
+  taTimerInterval = requestAnimationFrame(updateTaTimerLoop);
+}
+
+// タイマーループ
+function updateTaTimerLoop() {
+  if (taState !== 'running') return;
+
+  const now = performance.now();
+  taElapsedTime = now - taStartTime;
+  
+  taTimer.textContent = formatTime(taElapsedTime);
+  
+  taTimerInterval = requestAnimationFrame(updateTaTimerLoop);
+}
+
+// タイム表示フォーマット (ミリ秒 -> MM:SS.CC)
+function formatTime(ms) {
+  const totalSeconds = ms / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  const centiseconds = Math.floor((ms % 1000) / 10);
+  
+  const mStr = String(minutes).padStart(2, '0');
+  const sStr = String(seconds).padStart(2, '0');
+  const cStr = String(centiseconds).padStart(2, '0');
+  
+  return `${mStr}:${sStr}.${cStr}`;
+}
+
+// タイマーUI表示の更新
+function updateTaUI() {
+  taStatus.className = "ta-status-label";
+  
+  if (taState === 'idle') {
+    taStatus.textContent = "READY - スタート位置 \"→\" に置いてください";
+  } else if (taState === 'ready') {
+    taStatus.textContent = "準備完了 - 同時押しでスタート！";
+    taStatus.classList.add('ready');
+  } else if (taState === 'countdown') {
+    taStatus.textContent = "カウントダウン中...";
+    taStatus.classList.add('countdown');
+  } else if (taState === 'running') {
+    taStatus.textContent = "計測中！";
+    taStatus.classList.add('running');
+  } else if (taState === 'finished') {
+    taStatus.textContent = "ゴールイン！";
+    taStatus.classList.add('finished');
+  }
+}
+
+// タイムアタック完走 (! カード検知時)
+function finishTimeAttack() {
+  if (taState !== 'running') return;
+
+  taState = 'finished';
+  updateTaUI();
+
+  if (taTimerInterval) {
+    cancelAnimationFrame(taTimerInterval);
+    taTimerInterval = null;
+  }
+
+  addLog(`🎉 ゴール！ タイム: ${formatTime(taElapsedTime)}`, "success");
+  playSound(9); // コイン音（ゴールファンファーレ）
+  setLED(0, 195, 227, 0); // 青点灯
+
+  // ベストタイム判定
+  if (taBestTime === null || taElapsedTime < taBestTime) {
+    taBestTime = taElapsedTime;
+    localStorage.setItem('toio_ta_best', taBestTime);
+    taBest.textContent = formatTime(taBestTime);
+    addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)}`, "success");
+    
+    // ベスト更新フラッシュ効果（LED）
+    flashLED(0, 195, 227, 3);
+  }
+}
+
+// ベストタイムのリセット
+btnResetBest.addEventListener('click', () => {
+  if (confirm("ベストタイムの記録をリセットしますか？")) {
+    taBestTime = null;
+    localStorage.removeItem('toio_ta_best');
+    initTaBestTimeDisplay();
+    addLog("ベストタイムの記録をリセットしました。", "system");
+  }
+});
+
+// LEDの複数回フラッシュ効果
+async function flashLED(r, g, b, count) {
+  for (let i = 0; i < count; i++) {
+    await setLED(r, g, b, 20);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await setLED(0, 0, 0, 20);
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  await setLED(r, g, b, 0);
+}
+
+// 初期化実行
+initTaBestTimeDisplay();

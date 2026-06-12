@@ -850,6 +850,145 @@ input:checked + .slider:before {
   text-shadow: 0 0 8px rgba(255, 230, 0, 0.4);
 }
 
+/* ==========================================================================
+   Time Attack Section
+   ========================================================================== */
+#time-attack-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.icon-timer {
+  color: var(--neon-yellow);
+}
+
+.ta-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+  width: 100%;
+}
+
+@media(min-width: 600px) {
+  .ta-container {
+    flex-direction: row;
+    justify-content: space-around;
+  }
+}
+
+.ta-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ta-status-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  transition: color 0.3s;
+}
+
+.ta-status-label.ready {
+  color: var(--neon-yellow);
+  text-shadow: 0 0 8px rgba(255, 230, 0, 0.3);
+}
+
+.ta-status-label.countdown {
+  color: var(--neon-red);
+  text-shadow: 0 0 8px rgba(255, 0, 85, 0.3);
+}
+
+.ta-status-label.running {
+  color: var(--neon-green);
+  text-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+}
+
+.ta-status-label.finished {
+  color: var(--neon-blue);
+  text-shadow: 0 0 8px rgba(0, 195, 227, 0.3);
+}
+
+.ta-timer-digits {
+  font-family: var(--font-mono);
+  font-size: 3.5rem;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+  line-height: 1;
+}
+
+.ta-best-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 160px;
+}
+
+.best-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--neon-yellow);
+  letter-spacing: 1.5px;
+  margin-bottom: 0.25rem;
+}
+
+.best-digits {
+  font-family: var(--font-mono);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--neon-yellow);
+  text-shadow: 0 0 8px rgba(255, 230, 0, 0.3);
+}
+
+/* カウントダウンオーバーレイ */
+.countdown-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(11, 12, 19, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.3s ease;
+}
+
+.countdown-content {
+  text-align: center;
+}
+
+#countdown-number {
+  font-family: var(--font-mono);
+  font-size: 6rem;
+  font-weight: 900;
+  color: var(--neon-red);
+  text-shadow: 0 0 30px rgba(255, 0, 85, 0.6);
+  display: inline-block;
+  animation: countdown-scale 1s infinite ease-in-out;
+}
+
+@keyframes countdown-scale {
+  0% { transform: scale(1.5); opacity: 0; }
+  20% { transform: scale(1); opacity: 1; }
+  80% { transform: scale(0.9); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
 
 
 

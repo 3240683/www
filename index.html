@@ -23,6 +23,36 @@
     </header>
 
     <main class="grid-container">
+      <!-- タイムアタックカード -->
+      <section class="card full-width" id="time-attack-section">
+        <div class="card-header">
+          <i data-lucide="timer" class="icon-timer"></i>
+          <h2>タイムアタック (Time Attack)</h2>
+        </div>
+        
+        <div class="ta-container">
+          <!-- メインタイマー表示 -->
+          <div class="ta-display">
+            <span id="ta-status" class="ta-status-label">READY - スタート位置 "→" に置いてください</span>
+            <div id="ta-timer" class="ta-timer-digits">00:00.00</div>
+          </div>
+          
+          <!-- ベストタイム表示 -->
+          <div class="ta-best-container">
+            <span class="best-label">🏆 BEST TIME</span>
+            <span id="ta-best" class="best-digits">--:--.--</span>
+            <button id="btn-reset-best" class="btn-clear" style="margin-top: 0.25rem;">記録リセット</button>
+          </div>
+        </div>
+
+        <!-- カウントダウン用オーバーレイ -->
+        <div id="countdown-overlay" class="countdown-overlay hidden">
+          <div class="countdown-content">
+            <span id="countdown-number">3</span>
+          </div>
+        </div>
+      </section>
+
       <!-- toio 接続 & 操作カード -->
       <section class="card" id="toio-section">
         <div class="card-header">
