@@ -3,9 +3,9 @@
  * ----------------------------------------------------
  * Web Bluetooth API を用いて toio コア キューブを制御し、
  * Web Gamepad API を用いて Nintendo Switch コントローラーの入力を反映させます。
- * さらに toio のIDセンサー情報を読み取り、マット上の座標と角度を可視化します。
+ * さらに toio のIDセンサー情報を読み取り、マット上の座標・角度・簡易カードマークを可視化します。
  * 自律動作としての「ランダムデモ走行モード」に加え、
- * マットに侵入した際に操作が狂う「操作シャッフルギミック」も搭載。
+ * マットやカードに侵入した際に操作が一時的に狂う「操作シャッフルギミック」も搭載。
  */
 
 // ==========================================================================
@@ -16,6 +16,22 @@ const ID_CHAR_UUID      = '10b20101-5b3b-4571-9508-cf3efcd7bbae'; // IDリーダ
 const MOTOR_CHAR_UUID   = '10b20102-5b3b-4571-9508-cf3efcd7bbae';
 const LED_CHAR_UUID     = '10b20103-5b3b-4571-9508-cf3efcd7bbae';
 const SOUND_CHAR_UUID   = '10b20104-5b3b-4571-9508-cf3efcd7bbae';
+
+// ==========================================================================
+// 簡易プレイマット・カード用 Standard ID 変換辞書
+// ==========================================================================
+const STANDARD_ID_MAP = {
+  3670320: '0', 3670321: '1', 3670322: '2', 3670323: '3', 3670324: '4',
+  3670325: '5', 3670326: '6', 3670327: '7', 3670328: '8', 3670329: '9',
+  3670337: 'A', 3670338: 'B', 3670339: 'C', 3670340: 'D', 3670341: 'E',
+  3670342: 'F', 3670343: 'G', 3670344: 'H', 3670345: 'I', 3670346: 'J',
+  3670347: 'K', 3670348: 'L', 3670349: 'M', 3670350: 'N', 3670351: 'O',
+  3670352: 'P', 3670353: 'Q', 3670354: 'R', 3670355: 'S', 3670356: 'T',
+  3670357: 'U', 3670358: 'V', 3670359: 'W', 3670360: 'X', 3670361: 'Y',
+  3670362: 'Z', 3670305: '!', 3670366: '↑', 3670335: '?', 3670315: '+',
+  3670317: '−', 3670333: '=', 3670332: '←', 3670367: '↓', 3670334: '→',
+  3670314: '×', 3670319: '÷', 3670309: '%'
+};
 
 // ==========================================================================
 // 状態管理変数
@@ -31,7 +47,7 @@ let isConnectedToio = false;
 let currentX = null;
 let currentY = null;
 let currentAngle = null;
-let isToioOnMat = false;
+let isToioOnMat = false; // マットまたはカードの上にいるフラグ
 
 // ゲームパッド関連
 let activeGamepadIndex = null;
@@ -52,8 +68,11 @@ const RANDOM_DIRECTIONS = [
 ];
 
 // 操作シャッフルギミック関連
-let isShuffleEnabled = false;   // ギミック自体が有効か
-let isShuffledActive = false;   // 実際に今シャッフル状態か
+let isShuffleEnabled = false;      // ギミック自体が有効か
+let isShuffledActive = false;      // 実際に今シャッフル状態か
+let isShuffleCooldown = false;     // クールダウン中(トリガーロック)か
+const SHUFFLE_DURATION_MS = 4000; // 操作が狂う時間 (4秒)
+let cooldownTimer = null;          // 自動復旧用タイマー
 let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
 
 // 送信制御（スロットリング＆変更検知）
@@ -98,10 +117,11 @@ const btnClearLogs = document.getElementById('btn-clear-logs');
 const guideToggle = document.getElementById('guide-toggle');
 const guideContent = document.getElementById('guide-content');
 
-// 座標表示用DOM
+// 座標・カード表示用DOM
 const coordX = document.getElementById('coord-x');
 const coordY = document.getElementById('coord-y');
 const coordAngle = document.getElementById('coord-angle');
+const detectedCard = document.getElementById('detected-card');
 const coordStatusText = document.getElementById('coord-status-text');
 const mapCanvas = document.getElementById('toio-map');
 const ctx = mapCanvas.getContext('2d');
@@ -309,7 +329,7 @@ function disconnectToio() {
 
 function onToioDisconnected() {
   stopRandomDrive();
-  stopShuffleGimmick(); // シャッフルの解除
+  stopShuffleGimmick();
   
   isConnectedToio = false;
   toioDevice = null;
@@ -324,7 +344,7 @@ function onToioDisconnected() {
   currentAngle = null;
   
   updateToioUI(false);
-  updateCoordinatesUI(null, null, null, false);
+  updateCoordinatesUI(null, null, null, null, false);
   addLog("toioコアキューブとの接続が解除されました。", "error");
 }
 
@@ -353,7 +373,7 @@ function updateToioUI(connected) {
 }
 
 // ==========================================================================
-// IDリーダー センサー値の通知処理
+// IDリーダー センサー値の通知処理 (標準ID・簡易カード対応)
 // ==========================================================================
 function handleIdNotification(event) {
   const data = event.target.value;
@@ -362,7 +382,7 @@ function handleIdNotification(event) {
   const infoType = data.getUint8(0);
 
   if (infoType === 0x01) {
-    // Position ID（マットの上に乗っている状態）
+    // 1) Position ID (マットの上に乗っている状態)
     if (data.byteLength < 7) return;
 
     const x = data.getUint16(1, true);
@@ -372,74 +392,95 @@ function handleIdNotification(event) {
     currentX = x;
     currentY = y;
     currentAngle = angle;
-    
-    const wasOnMat = isToioOnMat;
     isToioOnMat = true;
 
-    // シャッフルトラップ発動判定 (新しくマットに乗った瞬間)
-    if (isShuffleEnabled && !isShuffledActive) {
-      isShuffledActive = true;
-      shuffleMapping();
-      updateShuffleUI(true);
+    // トラップ発動判定 (クールダウン中でなければ発動)
+    if (isShuffleEnabled && !isShuffleCooldown) {
+      triggerShuffleGimmick("マット侵入");
     }
 
-    updateCoordinatesUI(x, y, angle, true);
-  } else if (infoType === 0x03) {
-    // Position ID Missed（マットから離れた状態）
+    updateCoordinatesUI(x, y, angle, null, true);
+  } 
+  else if (infoType === 0x02) {
+    // 2) Standard ID (簡易プレイマットやカードの上に乗っている状態)
+    if (data.byteLength < 7) return;
+
+    const standardId = data.getUint32(1, true); // リトルエンディアン UInt32
+    const angle = data.getUint16(5, true);      // リトルエンディアン UInt16
+
+    const cardMark = STANDARD_ID_MAP[standardId] || '不明';
+    currentAngle = angle;
+    isToioOnMat = true;
+
+    // トラップ発動判定 (クールダウン中でなければ発動)
+    if (isShuffleEnabled && !isShuffleCooldown) {
+      triggerShuffleGimmick(`簡易カード [${cardMark}]`);
+    }
+
+    updateCoordinatesUI(null, null, angle, cardMark, true);
+  }
+  else if (infoType === 0x03 || infoType === 0x04) {
+    // 3) Position ID / Standard ID Missed (マットやカードから離れた状態)
     const wasOnMat = isToioOnMat;
     isToioOnMat = false;
     
-    // 自律走行中にマットから落ちた場合は安全のため緊急停止
+    // 自律走行中にマット/カードから落ちた場合は安全のため緊急停止
     if (isRandomDriving && wasOnMat) {
       addLog("マット外への脱落を検知したため、自動走行を緊急停止しました。", "error");
       stopRandomDrive();
     }
 
-    // シャッフルトラップ解除判定
+    // トラップの即時復旧処理 (持ち上げて離した場合はクールダウンを待たずに復帰させ、即次のトリガーを可能に)
     if (isShuffledActive) {
-      isShuffledActive = false;
-      resetMapping();
-      updateShuffleUI(false);
-      addLog("マットから離れたため、操作が正常に戻りました。", "system");
+      stopShuffleGimmick();
+      addLog("マットやカードから離れたため、操作が正常に戻りました。", "system");
     }
 
-    updateCoordinatesUI(null, null, null, false);
+    updateCoordinatesUI(null, null, null, null, false);
   }
 }
 
 /**
  * 座標表示UIとCanvasの更新
  */
-function updateCoordinatesUI(x, y, angle, isOnMat) {
+function updateCoordinatesUI(x, y, angle, cardMark, isOnMat) {
   if (isOnMat) {
-    coordX.textContent = x;
-    coordY.textContent = y;
-    coordAngle.textContent = `${angle}°`;
-    coordStatusText.textContent = "マット内";
+    coordX.textContent = x !== null ? x : "---";
+    coordY.textContent = y !== null ? y : "---";
+    coordAngle.textContent = angle !== null ? `${angle}°` : "---";
+    detectedCard.textContent = cardMark !== null ? cardMark : "---";
+    
+    coordStatusText.textContent = cardMark !== null ? "カード検出中" : "マット内";
     coordStatusText.className = "status-val on-mat";
-    drawMap(x, y, angle, true);
+    
+    // 座標がある場合のみマップを描画し、カード検出時は背景クリア＋角度だけ反映
+    if (x !== null && y !== null) {
+      drawMap(x, y, angle, true);
+    } else {
+      drawMap(null, null, angle, false);
+    }
   } else {
     coordX.textContent = "---";
     coordY.textContent = "---";
     coordAngle.textContent = "---";
+    detectedCard.textContent = "---";
     coordStatusText.textContent = "マット外";
     coordStatusText.className = "status-val off-mat";
+    
     drawMap(currentX, currentY, currentAngle, false);
   }
 }
 
 // ==========================================================================
-// 操作シャッフル (パニックトラップ) ロジック
+// 操作シャッフル (パニックトラップ) クールダウンタイマー制御
 // ==========================================================================
 chkShuffleEnable.addEventListener('change', (e) => {
   isShuffleEnabled = e.target.checked;
   if (isShuffleEnabled) {
-    addLog("操作シャッフルギミックを有効にしました。マットに乗ると発動します！", "system");
-    // すでにマットの上に乗っている状態でチェックを入れた場合は即発動
-    if (isToioOnMat && !isShuffledActive) {
-      isShuffledActive = true;
-      shuffleMapping();
-      updateShuffleUI(true);
+    addLog("操作シャッフルギミックを有効にしました。マットやカードに乗ると発動します！", "system");
+    // すでに上に乗っている状態でチェックを入れた場合は即発動
+    if (isToioOnMat && !isShuffleCooldown) {
+      triggerShuffleGimmick("ギミックON");
     }
   } else {
     addLog("操作シャッフルギミックを無効にしました。", "system");
@@ -447,11 +488,39 @@ chkShuffleEnable.addEventListener('change', (e) => {
   }
 });
 
+/**
+ * トラップ起動処理 (4秒間シャッフル発動 ➡ 自動通常復帰 & クールダウン)
+ */
+function triggerShuffleGimmick(source) {
+  isShuffleCooldown = true; // 判定をロック (クールダウン開始)
+  isShuffledActive = true;
+  
+  // マッピングをシャッフル
+  shuffleMapping();
+  updateShuffleUI(true);
+
+  addLog(`⚠️【トラップ発動】${source}を検知！4秒間操作がシャッフルされます！`, "error");
+  playSound(1); // 警告音
+  setLED(255, 0, 0, 50); // 一瞬赤く光らせる
+
+  // 4秒後に自動復旧タイマーを設定
+  if (cooldownTimer) clearTimeout(cooldownTimer);
+  cooldownTimer = setTimeout(() => {
+    isShuffleCooldown = false; // クールダウン解除、再判定可能にする
+    isShuffledActive = false;
+    resetMapping(); // 通常操作へ復帰
+    updateShuffleUI(false);
+    
+    addLog("【自動復旧】操作が通常に戻りました。再度マットやカードに乗るとシャッフルされます。", "success");
+    playSound(2); // 復旧のサイン音
+    setLED(0, 195, 227, 50); // ネオンブルー点滅
+  }, SHUFFLE_DURATION_MS);
+}
+
 function shuffleMapping() {
   const inputs = ['n', 's', 'e', 'w'];
   const outputs = [...inputs];
   
-  // Fisher-Yates アルゴリズムでマッピング順をシャッフル
   for (let i = outputs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [outputs[i], outputs[j]] = [outputs[j], outputs[i]];
@@ -464,11 +533,7 @@ function shuffleMapping() {
     w: outputs[3]
   };
 
-  addLog(`⚠️ マット侵入！操作がシャッフルされました！ [前進⇒${getDirJapaneseName(outputs[0])}]`, "error");
-  playSound(1); // ダメージ音を流して警告
-  
-  // LEDを赤に一瞬点滅
-  setLED(255, 0, 0, 50);
+  addLog(`シャッフル割当: [前進⇒${getDirJapaneseName(outputs[0])}] [後退⇒${getDirJapaneseName(outputs[1])}] [右回⇒${getDirJapaneseName(outputs[2])}] [左回⇒${getDirJapaneseName(outputs[3])}]`, "controller");
 }
 
 function resetMapping() {
@@ -476,6 +541,11 @@ function resetMapping() {
 }
 
 function stopShuffleGimmick() {
+  if (cooldownTimer) {
+    clearTimeout(cooldownTimer);
+    cooldownTimer = null;
+  }
+  isShuffleCooldown = false;
   isShuffledActive = false;
   resetMapping();
   updateShuffleUI(false);
@@ -494,16 +564,8 @@ function updateShuffleUI(shuffled) {
   lucide.createIcons();
 }
 
-function getDirJapaneseName(id) {
-  if (id === 'n') return '前進';
-  if (id === 's') return '後退';
-  if (id === 'e') return '右回転';
-  if (id === 'w') return '左回転';
-  return id;
-}
-
 // ==========================================================================
-// ランダム8方向走行ロジック
+// ランダム8方向走行ロジック (自律走行)
 // ==========================================================================
 btnRandomStart.addEventListener('click', () => {
   startRandomDrive();
@@ -518,7 +580,6 @@ function startRandomDrive() {
   if (!isConnectedToio) return;
   if (isRandomDriving) return;
 
-  // 自律走行時はシャッフルギミックをOFFにするのが安全
   if (isShuffleEnabled) {
     chkShuffleEnable.checked = false;
     isShuffleEnabled = false;
@@ -784,10 +845,9 @@ function pollGamepadLoop() {
 }
 
 /**
- * コントローラーの入力を処理し、toioに反映
+ * コントローラーの入力を処理し、toioに反映 (シャッフル適用)
  */
 function handleGamepadInput(gp) {
-  // --- A) アナログスティックの取得 (左スティック) ---
   let axisX = gp.axes[0] || 0;
   let axisY = gp.axes[1] || 0;
 
@@ -797,7 +857,6 @@ function handleGamepadInput(gp) {
 
   updateVirtualStickUI(xValue, yValue);
 
-  // --- B) ボタン入力の監視 ---
   let btnA = gp.buttons[1]?.pressed || false;
   let btnB = gp.buttons[0]?.pressed || false;
   let btnX = gp.buttons[3]?.pressed || false;
@@ -812,7 +871,6 @@ function handleGamepadInput(gp) {
 
   updateButtonNodesUI(btnA, btnB, btnX, btnY);
 
-  // ボタン押下検知時の自動走行解除 ＆ アクション実行
   detectButtonPress('A', btnA, () => {
     if (isRandomDriving) stopRandomDrive("コントローラー操作");
     addLog("[A] ボタンが押されました - 緑LED & 接続音", "controller");
@@ -838,35 +896,30 @@ function handleGamepadInput(gp) {
     playSound(9);
   });
 
-  // スティック操作があった場合の自動走行解除 ＆ モーター駆動
   if (Math.abs(xValue) > 0 || Math.abs(yValue) > 0) {
     if (isRandomDriving) {
       stopRandomDrive("コントローラーのスティック操作");
     }
   }
 
-  // キーボードがアクティブでなく、かつランダム走行中でない場合にスティック値を適用
   if (!isKeyboardControlling() && !isRandomDriving) {
-    const steerY = -yValue; // 前進方向: +1.0, 後退方向: -1.0
-    const steerX = xValue;  // 右旋回: +1.0, 左旋回: -1.0
+    const steerY = -yValue; 
+    const steerX = xValue;  
 
-    // 通常状態とシャッフル状態で入力をマッピング
-    // 意思の特定
+    // プレイヤーの操縦意思 (0.0〜1.0)
     const in_n = Math.max(0, steerY);
     const in_s = Math.max(0, -steerY);
     const in_e = Math.max(0, steerX);
     const in_w = Math.max(0, -steerX);
 
-    // アクション強度の計算 (シャッフル適用)
+    // アクション強度の計算 (マッピング変換適用)
     let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
     
-    // マッピング変換
     if (currentMapping.n === 'n') act_n += in_n; else if (currentMapping.n === 's') act_s += in_n; else if (currentMapping.n === 'e') act_e += in_n; else if (currentMapping.n === 'w') act_w += in_n;
     if (currentMapping.s === 'n') act_n += in_s; else if (currentMapping.s === 's') act_s += in_s; else if (currentMapping.s === 'e') act_e += in_s; else if (currentMapping.s === 'w') act_w += in_s;
     if (currentMapping.e === 'n') act_n += in_e; else if (currentMapping.e === 's') act_s += in_e; else if (currentMapping.e === 'e') act_e += in_e; else if (currentMapping.e === 'w') act_w += in_e;
     if (currentMapping.w === 'n') act_n += in_w; else if (currentMapping.w === 's') act_s += in_w; else if (currentMapping.w === 'e') act_e += in_w; else if (currentMapping.w === 'w') act_w += in_w;
 
-    // 左右モーター比率の合成
     let leftMotor = act_n - act_s + act_e - act_w;
     let rightMotor = act_n - act_s - act_e + act_w;
 
@@ -940,7 +993,7 @@ function toggleBtnClass(elementId, isPressed) {
 }
 
 // ==========================================================================
-// キーボード操作ロジック (フォールバック)
+// キーボード操作ロジック (フォールバック、シャッフル適用)
 // ==========================================================================
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
@@ -1004,7 +1057,6 @@ function processKeyboardDrive() {
   if (currentMapping.e === 'n') act_n += right; else if (currentMapping.e === 's') act_s += right; else if (currentMapping.e === 'e') act_e += right; else if (currentMapping.e === 'w') act_w += right;
   if (currentMapping.w === 'n') act_n += left; else if (currentMapping.w === 's') act_s += left; else if (currentMapping.w === 'e') act_e += left; else if (currentMapping.w === 'w') act_w += left;
 
-  // 左右モーター比率の合成
   let leftMotor = act_n - act_s + act_e - act_w;
   let rightMotor = act_n - act_s - act_e + act_w;
 

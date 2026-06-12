@@ -957,5 +957,11 @@ input:checked + .slider:before {
   }
 }
 
+.text-yellow {
+  color: var(--neon-yellow) !important;
+  text-shadow: 0 0 8px rgba(255, 230, 0, 0.4);
+}
+
+
 
 
