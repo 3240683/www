@@ -39,6 +39,22 @@
           <i data-lucide="bluetooth"></i> toio に接続する
         </button>
 
+        <!-- toio センサー情報パネル (移設) -->
+        <div class="toio-sensor-panel disabled-until-connected" id="toio-sensor-panel">
+          <div class="sensor-item">
+            <span class="sensor-label">検出マーク</span>
+            <span class="sensor-val text-yellow" id="detected-card">---</span>
+          </div>
+          <div class="sensor-item">
+            <span class="sensor-label">角度</span>
+            <span class="sensor-val" id="coord-angle">---</span>
+          </div>
+          <div class="sensor-item">
+            <span class="sensor-label">状態</span>
+            <span class="sensor-val status-val off-mat" id="coord-status-text">マット外</span>
+          </div>
+        </div>
+
         <div class="control-group disabled-until-connected" id="toio-controls">
           <h3>クイックアクション</h3>
           <!-- LED点灯テスト -->
@@ -159,67 +175,6 @@
         </div>
       </section>
     </main>
-
-    <!-- 座標・バーチャルマップカード -->
-    <section class="card full-width" id="map-section">
-      <div class="card-header">
-        <i data-lucide="map"></i>
-        <h2>toio ポジション マップ</h2>
-      </div>
-      <div class="map-grid">
-        <!-- バーチャルマット(Canvas) -->
-        <div class="map-visual-container">
-          <canvas id="toio-map" width="400" height="400"></canvas>
-        </div>
-        <!-- 座標デジタルカウンター -->
-        <div class="coords-panel">
-          <div class="coord-item">
-            <span class="coord-label">X 座標 (マット上)</span>
-            <span class="coord-val" id="coord-x">---</span>
-          </div>
-          <div class="coord-item">
-            <span class="coord-label">Y 座標 (マット上)</span>
-            <span class="coord-val" id="coord-y">---</span>
-          </div>
-          <div class="coord-item">
-            <span class="coord-label">角度 (Angle)</span>
-            <span class="coord-val" id="coord-angle">---</span>
-          </div>
-          <div class="coord-item">
-            <span class="coord-label">検出カード (マーク)</span>
-            <span class="coord-val text-yellow" id="detected-card">---</span>
-          </div>
-          <div class="coord-status">
-            <span class="status-label">マット状態:</span>
-            <span class="status-val off-mat" id="coord-status-text">マット外</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- モーター速度インジケーター -->
-    <section class="card full-width" id="monitor-section">
-      <div class="card-header">
-        <i data-lucide="activity"></i>
-        <h2>リアルタイム・テレメトリ</h2>
-      </div>
-      <div class="telemetry-grid">
-        <div class="telemetry-item">
-          <span class="label">左モーター速度</span>
-          <div class="speed-bar-container">
-            <div class="speed-bar" id="left-speed-bar"></div>
-            <span class="speed-value" id="left-speed-val">0</span>
-          </div>
-        </div>
-        <div class="telemetry-item">
-          <span class="label">右モーター速度</span>
-          <div class="speed-bar-container">
-            <div class="speed-bar" id="right-speed-bar"></div>
-            <span class="speed-value" id="right-speed-val">0</span>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <!-- 操作ガイド & キーボード操作 -->
     <footer class="app-footer">
