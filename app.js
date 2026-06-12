@@ -4,7 +4,8 @@
  * Web Bluetooth API を用いて toio コア キューブを制御し、
  * Web Gamepad API を用いて Nintendo Switch コントローラーの入力を反映させます。
  * さらに toio のIDセンサー情報を読み取り、マット上の座標と角度を可視化します。
- * 自律動作として「ランダム8方向走行モード」も搭載。
+ * 自律動作としての「ランダムデモ走行モード」に加え、
+ * マットに侵入した際に操作が狂う「操作シャッフルギミック」も搭載。
  */
 
 // ==========================================================================
@@ -49,6 +50,11 @@ const RANDOM_DIRECTIONS = [
   { id: 'w',  name: '左回転', leftSpeed: 55, leftDir: 2, rightSpeed: 55, rightDir: 1 },
   { id: 'center', name: '一時停止', leftSpeed: 0, leftDir: 1, rightSpeed: 0, rightDir: 1 }
 ];
+
+// 操作シャッフルギミック関連
+let isShuffleEnabled = false;   // ギミック自体が有効か
+let isShuffledActive = false;   // 実際に今シャッフル状態か
+let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
 
 // 送信制御（スロットリング＆変更検知）
 let lastLeftSpeed = 0;
@@ -112,6 +118,12 @@ const directionElements = {
   's': document.getElementById('dir-s')
 };
 
+// 操作シャッフル用DOM
+const chkShuffleEnable = document.getElementById('chk-shuffle-enable');
+const shuffleStatusPanel = document.getElementById('shuffle-status-panel');
+const shuffleStatusText = document.getElementById('shuffle-status-text');
+const shuffleIcon = document.getElementById('shuffle-icon');
+
 // toioの標準マット座標範囲
 const MIN_MAT_X = 45;
 const MAX_MAT_X = 455;
@@ -146,41 +158,34 @@ function drawMap(x, y, angle, isOnMat) {
   const width = mapCanvas.width;
   const height = mapCanvas.height;
   
-  // 1. 背景のクリア
   ctx.fillStyle = '#0d0f1a';
   ctx.fillRect(0, 0, width, height);
   
-  // 2. グリッド線（目盛り）の描画
   ctx.strokeStyle = 'rgba(0, 195, 227, 0.08)';
   ctx.lineWidth = 1;
   const gridSize = 40;
   for (let i = 0; i < width; i += gridSize) {
-    // 縦線
     ctx.beginPath();
     ctx.moveTo(i, 0);
     ctx.lineTo(i, height);
     ctx.stroke();
-    // 横線
+    
     ctx.beginPath();
     ctx.moveTo(0, i);
     ctx.lineTo(width, i);
     ctx.stroke();
   }
 
-  // 3. 有効なマット範囲を示す枠線の描画
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
   ctx.lineWidth = 2;
   ctx.strokeRect(20, 20, width - 40, height - 40);
 
-  // マットのラベル
   ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.font = '10px Inter';
   ctx.textAlign = 'center';
   ctx.fillText('TOIO PLAY MAT AREA', width / 2, 35);
   
-  // 4. toio本体の描画 (座標が検出されている場合)
   if (isOnMat && x !== null && y !== null && angle !== null) {
-    // マット座標(MIN-MAX)をCanvas座標(20〜width-20)へマッピング
     const canvasX = mapRange(x, MIN_MAT_X, MAX_MAT_X, 20, width - 20);
     const canvasY = mapRange(y, MIN_MAT_Y, MAX_MAT_Y, 20, height - 20);
     
@@ -188,21 +193,18 @@ function drawMap(x, y, angle, isOnMat) {
     ctx.translate(canvasX, canvasY);
     ctx.rotate((angle * Math.PI) / 180);
     
-    // toioコアキューブ本体 (約25x25ピクセル四方)
     ctx.fillStyle = '#ffffff';
     ctx.shadowBlur = 12;
     ctx.shadowColor = 'rgba(0, 195, 227, 0.6)';
     ctx.beginPath();
     ctx.roundRect(-13, -13, 26, 26, 4);
     ctx.fill();
-    ctx.shadowBlur = 0; // シャドウリセット
+    ctx.shadowBlur = 0;
     
-    // タイヤ部分 (左右の黒い細四角)
     ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(-8, -15, 16, 2); // 左タイヤ
-    ctx.fillRect(-8, 13, 16, 2);  // 右タイヤ
+    ctx.fillRect(-8, -15, 16, 2);
+    ctx.fillRect(-8, 13, 16, 2);
 
-    // 前部を示す印（目の代わりになるネオンブルーのドットまたは三角）
     ctx.fillStyle = 'var(--neon-blue)';
     ctx.beginPath();
     ctx.moveTo(8, -6);
@@ -211,7 +213,6 @@ function drawMap(x, y, angle, isOnMat) {
     ctx.closePath();
     ctx.fill();
 
-    // 進行方向を示す矢印の描画
     ctx.strokeStyle = 'var(--neon-blue)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -221,33 +222,27 @@ function drawMap(x, y, angle, isOnMat) {
 
     ctx.restore();
     
-    // 座標プロット位置のガイドライン
     ctx.strokeStyle = 'rgba(0, 195, 227, 0.25)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
-    // Xガイド線
     ctx.beginPath();
     ctx.moveTo(canvasX, 0);
     ctx.lineTo(canvasX, height);
     ctx.stroke();
-    // Yガイド線
+    
     ctx.beginPath();
     ctx.moveTo(0, canvasY);
     ctx.lineTo(width, canvasY);
     ctx.stroke();
-    ctx.setLineDash([]); // ダッシュ解除
+    ctx.setLineDash([]);
   }
 }
 
-/**
- * 範囲変換用ヘルパー関数
- */
 function mapRange(value, inMin, inMax, outMin, outMax) {
   const result = outMin + ((value - inMin) * (outMax - outMin)) / (inMax - inMin);
   return Math.max(outMin, Math.min(outMax, result));
 }
 
-// 初期化実行
 initMapCanvas();
 
 // ==========================================================================
@@ -270,7 +265,6 @@ async function connectToio() {
 
     addLog(`デバイスが選択されました: ${toioDevice.name}`, "system");
     
-    // 切断イベント監視
     toioDevice.addEventListener('gattserverdisconnected', onToioDisconnected);
 
     addLog("GATTサーバーに接続中...", "system");
@@ -285,7 +279,6 @@ async function connectToio() {
     ledCharacteristic = await service.getCharacteristic(LED_CHAR_UUID);
     soundCharacteristic = await service.getCharacteristic(SOUND_CHAR_UUID);
 
-    // IDリーダーの通知開始
     addLog("IDセンサー通知登録中...", "system");
     await idCharacteristic.startNotifications();
     idCharacteristic.addEventListener('characteristicvaluechanged', handleIdNotification);
@@ -294,8 +287,7 @@ async function connectToio() {
     updateToioUI(true);
     addLog("toioコアキューブに正常に接続しました！", "success");
 
-    // 接続成功時にピッと音を鳴らし、LEDを初期カラーにする
-    await playSound(2); // 接続音
+    await playSound(2);
     const defaultColor = hexToRgb(ledPicker.value);
     await setLED(defaultColor.r, defaultColor.g, defaultColor.b);
 
@@ -316,7 +308,8 @@ function disconnectToio() {
 }
 
 function onToioDisconnected() {
-  stopRandomDrive(); // 自律走行の停止
+  stopRandomDrive();
+  stopShuffleGimmick(); // シャッフルの解除
   
   isConnectedToio = false;
   toioDevice = null;
@@ -353,7 +346,6 @@ function updateToioUI(connected) {
     btnConnectToio.style.boxShadow = '0 4px 15px var(--shadow-blue)';
     toioControls.classList.add('disabled-until-connected');
     
-    // テレメトリとマップをリセット
     updateTelemetry(0, 0);
     initMapCanvas();
   }
@@ -380,20 +372,38 @@ function handleIdNotification(event) {
     currentX = x;
     currentY = y;
     currentAngle = angle;
+    
+    const wasOnMat = isToioOnMat;
     isToioOnMat = true;
+
+    // シャッフルトラップ発動判定 (新しくマットに乗った瞬間)
+    if (isShuffleEnabled && !isShuffledActive) {
+      isShuffledActive = true;
+      shuffleMapping();
+      updateShuffleUI(true);
+    }
 
     updateCoordinatesUI(x, y, angle, true);
   } else if (infoType === 0x03) {
     // Position ID Missed（マットから離れた状態）
     const wasOnMat = isToioOnMat;
     isToioOnMat = false;
-    updateCoordinatesUI(null, null, null, false);
     
-    // ランダム走行中にマットから落ちた場合は安全のため緊急停止
+    // 自律走行中にマットから落ちた場合は安全のため緊急停止
     if (isRandomDriving && wasOnMat) {
       addLog("マット外への脱落を検知したため、自動走行を緊急停止しました。", "error");
       stopRandomDrive();
     }
+
+    // シャッフルトラップ解除判定
+    if (isShuffledActive) {
+      isShuffledActive = false;
+      resetMapping();
+      updateShuffleUI(false);
+      addLog("マットから離れたため、操作が正常に戻りました。", "system");
+    }
+
+    updateCoordinatesUI(null, null, null, false);
   }
 }
 
@@ -419,6 +429,80 @@ function updateCoordinatesUI(x, y, angle, isOnMat) {
 }
 
 // ==========================================================================
+// 操作シャッフル (パニックトラップ) ロジック
+// ==========================================================================
+chkShuffleEnable.addEventListener('change', (e) => {
+  isShuffleEnabled = e.target.checked;
+  if (isShuffleEnabled) {
+    addLog("操作シャッフルギミックを有効にしました。マットに乗ると発動します！", "system");
+    // すでにマットの上に乗っている状態でチェックを入れた場合は即発動
+    if (isToioOnMat && !isShuffledActive) {
+      isShuffledActive = true;
+      shuffleMapping();
+      updateShuffleUI(true);
+    }
+  } else {
+    addLog("操作シャッフルギミックを無効にしました。", "system");
+    stopShuffleGimmick();
+  }
+});
+
+function shuffleMapping() {
+  const inputs = ['n', 's', 'e', 'w'];
+  const outputs = [...inputs];
+  
+  // Fisher-Yates アルゴリズムでマッピング順をシャッフル
+  for (let i = outputs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [outputs[i], outputs[j]] = [outputs[j], outputs[i]];
+  }
+
+  currentMapping = {
+    n: outputs[0],
+    s: outputs[1],
+    e: outputs[2],
+    w: outputs[3]
+  };
+
+  addLog(`⚠️ マット侵入！操作がシャッフルされました！ [前進⇒${getDirJapaneseName(outputs[0])}]`, "error");
+  playSound(1); // ダメージ音を流して警告
+  
+  // LEDを赤に一瞬点滅
+  setLED(255, 0, 0, 50);
+}
+
+function resetMapping() {
+  currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' };
+}
+
+function stopShuffleGimmick() {
+  isShuffledActive = false;
+  resetMapping();
+  updateShuffleUI(false);
+}
+
+function updateShuffleUI(shuffled) {
+  if (shuffled) {
+    shuffleStatusPanel.className = 'shuffle-status-panel shuffled';
+    shuffleStatusText.textContent = '⚠️ 操作シャッフル発動中！';
+    shuffleIcon.setAttribute('data-lucide', 'alert-triangle');
+  } else {
+    shuffleStatusPanel.className = 'shuffle-status-panel normal';
+    shuffleStatusText.textContent = '通常操作モード';
+    shuffleIcon.setAttribute('data-lucide', 'shield-check');
+  }
+  lucide.createIcons();
+}
+
+function getDirJapaneseName(id) {
+  if (id === 'n') return '前進';
+  if (id === 's') return '後退';
+  if (id === 'e') return '右回転';
+  if (id === 'w') return '左回転';
+  return id;
+}
+
+// ==========================================================================
 // ランダム8方向走行ロジック
 // ==========================================================================
 btnRandomStart.addEventListener('click', () => {
@@ -434,15 +518,22 @@ function startRandomDrive() {
   if (!isConnectedToio) return;
   if (isRandomDriving) return;
 
+  // 自律走行時はシャッフルギミックをOFFにするのが安全
+  if (isShuffleEnabled) {
+    chkShuffleEnable.checked = false;
+    isShuffleEnabled = false;
+    stopShuffleGimmick();
+    addLog("自律走行のため、操作シャッフルを自動的にOFFにしました。", "system");
+  }
+
   isRandomDriving = true;
   btnRandomStart.disabled = true;
   btnRandomStop.disabled = false;
   
   addLog("ランダム8方向自動走行を開始しました。(操縦入力で自動停止)", "success");
   
-  // LEDを緑に点滅
   setLED(57, 255, 20);
-  playSound(3); // レベルアップ音でスタート合図
+  playSound(3);
   
   tickRandomDrive();
 }
@@ -459,45 +550,33 @@ function stopRandomDrive(reason = null) {
     randomDriveTimer = null;
   }
 
-  // UIのアクティブ表示をクリア
   clearActiveDirectionUI();
-
-  // モーター停止
   controlMotors(0, 1, 0, 1);
   updateTelemetry(0, 0);
 
   if (reason) {
     addLog(`【割り込み】${reason}を検知したため、自動走行を解除しました。`, "system");
-    playSound(1); // ダメージ音（キャンセル音代わり）
+    playSound(1);
   }
 }
 
-/**
- * 矢印表示のアクティブ状態をクリア
- */
 function clearActiveDirectionUI() {
   Object.keys(directionElements).forEach(key => {
     directionElements[key].classList.remove('active');
   });
 }
 
-/**
- * ランダムに方向を選択し、toioを駆動させるループ
- */
 function tickRandomDrive() {
   if (!isRandomDriving || !isConnectedToio) return;
 
-  // もしマット外であれば、安全のために停止状態にする
   if (!isToioOnMat) {
     clearActiveDirectionUI();
     directionElements['center'].classList.add('active');
     controlMotors(0, 1, 0, 1);
     updateTelemetry(0, 0);
   } else {
-    // 8方向＋停止からランダムに決定
     const nextDir = RANDOM_DIRECTIONS[Math.floor(Math.random() * RANDOM_DIRECTIONS.length)];
     
-    // UIのアクティブ表示切替
     clearActiveDirectionUI();
     if (directionElements[nextDir.id]) {
       directionElements[nextDir.id].classList.add('active');
@@ -505,26 +584,22 @@ function tickRandomDrive() {
     
     addLog(`自動走行 - 動作変更: ${nextDir.name}`, "system");
     
-    // モーター送信
     controlMotors(nextDir.leftSpeed, nextDir.leftDir, nextDir.rightSpeed, nextDir.rightDir);
 
-    // テレメトリ更新
     const signedLeft = nextDir.leftDir === 1 ? nextDir.leftSpeed : -nextDir.leftSpeed;
     const signedRight = nextDir.rightDir === 1 ? nextDir.rightSpeed : -nextDir.rightSpeed;
     updateTelemetry(signedLeft, signedRight);
     
-    // ランダム走行用のLED点滅
     if (nextDir.id !== 'center') {
       const r = Math.floor(Math.random() * 256);
       const g = Math.floor(Math.random() * 256);
       const b = Math.floor(Math.random() * 256);
       setLED(r, g, b);
     } else {
-      setLED(255, 0, 0); // 停止時は赤
+      setLED(255, 0, 0);
     }
   }
 
-  // 1秒(1000ms)〜2.2秒(2200ms)のランダムな間隔で次の動きに遷移
   const nextDuration = 1000 + Math.random() * 1200;
   randomDriveTimer = setTimeout(tickRandomDrive, nextDuration);
 }
@@ -613,22 +688,15 @@ async function playSound(soundId, volume = 255) {
   }
 }
 
-// LEDカラーピッカーのイベント
 ledPicker.addEventListener('input', (e) => {
-  // 手動でLEDを変えた際、自動走行中なら停止する
-  if (isRandomDriving) {
-    stopRandomDrive("LED操作");
-  }
+  if (isRandomDriving) stopRandomDrive("LED操作");
   const rgb = hexToRgb(e.target.value);
   setLED(rgb.r, rgb.g, rgb.b);
 });
 
-// プリセットカラーボタンのイベント
 document.querySelectorAll('.color-preset').forEach(btn => {
   btn.addEventListener('click', (e) => {
-    if (isRandomDriving) {
-      stopRandomDrive("プリセットカラー操作");
-    }
+    if (isRandomDriving) stopRandomDrive("プリセットカラー操作");
     const hex = e.target.dataset.color;
     ledPicker.value = hex;
     const rgb = hexToRgb(hex);
@@ -637,12 +705,9 @@ document.querySelectorAll('.color-preset').forEach(btn => {
   });
 });
 
-// クイック効果音ボタンのイベント
 document.querySelectorAll('[data-sound]').forEach(btn => {
   btn.addEventListener('click', (e) => {
-    if (isRandomDriving) {
-      stopRandomDrive("効果音操作");
-    }
+    if (isRandomDriving) stopRandomDrive("効果音操作");
     const soundId = parseInt(e.currentTarget.dataset.sound, 10);
     playSound(soundId);
     addLog(`効果音を送信しました: ID ${soundId}`, "system");
@@ -782,11 +847,28 @@ function handleGamepadInput(gp) {
 
   // キーボードがアクティブでなく、かつランダム走行中でない場合にスティック値を適用
   if (!isKeyboardControlling() && !isRandomDriving) {
-    const steerY = -yValue; 
-    const steerX = xValue;  
+    const steerY = -yValue; // 前進方向: +1.0, 後退方向: -1.0
+    const steerX = xValue;  // 右旋回: +1.0, 左旋回: -1.0
 
-    let leftMotor = steerY + steerX;
-    let rightMotor = steerY - steerX;
+    // 通常状態とシャッフル状態で入力をマッピング
+    // 意思の特定
+    const in_n = Math.max(0, steerY);
+    const in_s = Math.max(0, -steerY);
+    const in_e = Math.max(0, steerX);
+    const in_w = Math.max(0, -steerX);
+
+    // アクション強度の計算 (シャッフル適用)
+    let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
+    
+    // マッピング変換
+    if (currentMapping.n === 'n') act_n += in_n; else if (currentMapping.n === 's') act_s += in_n; else if (currentMapping.n === 'e') act_e += in_n; else if (currentMapping.n === 'w') act_w += in_n;
+    if (currentMapping.s === 'n') act_n += in_s; else if (currentMapping.s === 's') act_s += in_s; else if (currentMapping.s === 'e') act_e += in_s; else if (currentMapping.s === 'w') act_w += in_s;
+    if (currentMapping.e === 'n') act_n += in_e; else if (currentMapping.e === 's') act_s += in_e; else if (currentMapping.e === 'e') act_e += in_e; else if (currentMapping.e === 'w') act_w += in_e;
+    if (currentMapping.w === 'n') act_n += in_w; else if (currentMapping.w === 's') act_s += in_w; else if (currentMapping.w === 'e') act_e += in_w; else if (currentMapping.w === 'w') act_w += in_w;
+
+    // 左右モーター比率の合成
+    let leftMotor = act_n - act_s + act_e - act_w;
+    let rightMotor = act_n - act_s - act_e + act_w;
 
     leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
     rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
@@ -871,7 +953,6 @@ window.addEventListener('keydown', (e) => {
     processKeyboardDrive();
   }
 
-  // 1, 2, 3, 4 キーでの効果音＆LED変更（自律走行も解除）
   if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4') {
     if (isRandomDriving) stopRandomDrive("キーボード操作");
   }
@@ -910,56 +991,32 @@ function processKeyboardDrive() {
     return;
   }
 
-  const fwd = keysPressed.w || keysPressed.ArrowUp;
-  const bwd = keysPressed.s || keysPressed.ArrowDown;
-  const left = keysPressed.a || keysPressed.ArrowLeft;
-  const right = keysPressed.d || keysPressed.ArrowRight;
+  const fwd = keysPressed.w || keysPressed.ArrowUp ? 1.0 : 0.0;
+  const bwd = keysPressed.s || keysPressed.ArrowDown ? 1.0 : 0.0;
+  const left = keysPressed.a || keysPressed.ArrowLeft ? 1.0 : 0.0;
+  const right = keysPressed.d || keysPressed.ArrowRight ? 1.0 : 0.0;
 
-  let leftSpeed = 0;
-  let rightSpeed = 0;
-  let leftDir = 1;
-  let rightDir = 1;
+  // アクション強度の計算 (シャッフル適用)
+  let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
+  
+  if (currentMapping.n === 'n') act_n += fwd; else if (currentMapping.n === 's') act_s += fwd; else if (currentMapping.n === 'e') act_e += fwd; else if (currentMapping.n === 'w') act_w += fwd;
+  if (currentMapping.s === 'n') act_n += bwd; else if (currentMapping.s === 's') act_s += bwd; else if (currentMapping.s === 'e') act_e += bwd; else if (currentMapping.s === 'w') act_w += bwd;
+  if (currentMapping.e === 'n') act_n += right; else if (currentMapping.e === 's') act_s += right; else if (currentMapping.e === 'e') act_e += right; else if (currentMapping.e === 'w') act_w += right;
+  if (currentMapping.w === 'n') act_n += left; else if (currentMapping.w === 's') act_s += left; else if (currentMapping.w === 'e') act_e += left; else if (currentMapping.w === 'w') act_w += left;
+
+  // 左右モーター比率の合成
+  let leftMotor = act_n - act_s + act_e - act_w;
+  let rightMotor = act_n - act_s - act_e + act_w;
+
+  leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
+  rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
   
   const DRIVE_SPEED = 60;
-  const TURN_SPEED = 40;
 
-  if (fwd && !bwd) {
-    if (left && !right) {
-      leftSpeed = TURN_SPEED;
-      rightSpeed = DRIVE_SPEED;
-    } else if (right && !left) {
-      leftSpeed = DRIVE_SPEED;
-      rightSpeed = TURN_SPEED;
-    } else {
-      leftSpeed = DRIVE_SPEED;
-      rightSpeed = DRIVE_SPEED;
-    }
-    leftDir = 1;
-    rightDir = 1;
-  } else if (bwd && !fwd) {
-    if (left && !right) {
-      leftSpeed = TURN_SPEED;
-      rightSpeed = DRIVE_SPEED;
-    } else if (right && !left) {
-      leftSpeed = DRIVE_SPEED;
-      rightSpeed = TURN_SPEED;
-    } else {
-      leftSpeed = DRIVE_SPEED;
-      rightSpeed = DRIVE_SPEED;
-    }
-    leftDir = 2;
-    rightDir = 2;
-  } else if (left && !right) {
-    leftSpeed = TURN_SPEED;
-    rightSpeed = TURN_SPEED;
-    leftDir = 2;
-    rightDir = 1;
-  } else if (right && !left) {
-    leftSpeed = TURN_SPEED;
-    rightSpeed = TURN_SPEED;
-    leftDir = 1;
-    rightDir = 2;
-  }
+  let leftSpeed = Math.round(Math.abs(leftMotor) * DRIVE_SPEED);
+  let rightSpeed = Math.round(Math.abs(rightMotor) * DRIVE_SPEED);
+  let leftDir = leftMotor >= 0 ? 1 : 2;
+  let rightDir = rightMotor >= 0 ? 1 : 2;
 
   controlMotors(leftSpeed, leftDir, rightSpeed, rightDir);
 
@@ -1004,13 +1061,11 @@ function hexToRgb(hex) {
   } : { r: 0, g: 0, b: 0 };
 }
 
-// ログクリア
 btnClearLogs.addEventListener('click', () => {
   logBox.innerHTML = '';
   addLog("ログをクリアしました。", "system");
 });
 
-// 操作ガイド折りたたみトグル
 guideToggle.addEventListener('click', () => {
   guideContent.classList.toggle('hidden');
   const isHidden = guideContent.classList.contains('hidden');

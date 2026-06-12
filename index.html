@@ -98,6 +98,23 @@
               <div class="dir-empty"></div>
             </div>
           </div>
+
+          <!-- 操作シャッフルギミック -->
+          <div class="sub-group">
+            <label>操作シャッフルギミック (パニックトラップ)</label>
+            <div class="shuffle-control-row">
+              <label class="switch">
+                <input type="checkbox" id="chk-shuffle-enable">
+                <span class="slider round"></span>
+              </label>
+              <span class="switch-label">ギミック有効</span>
+            </div>
+            <!-- シャッフル状態表示パネル -->
+            <div class="shuffle-status-panel normal" id="shuffle-status-panel">
+              <i data-lucide="shield-check" id="shuffle-icon"></i>
+              <span id="shuffle-status-text">通常操作モード</span>
+            </div>
+          </div>
         </div>
       </section>
 
