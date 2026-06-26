@@ -1048,6 +1048,130 @@ input:checked + .slider:before {
   min-height: 1.5rem;
 }
 
+/* ==========================================================================
+   Player Name & Lap Times Styles (Added)
+   ========================================================================== */
+.player-name-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  width: 100%;
+  max-width: 250px;
+}
+
+.player-name-container label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+#player-name-input {
+  background: rgba(11, 12, 19, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  padding: 0.4rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#player-name-input:focus {
+  outline: none;
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 8px rgba(0, 195, 227, 0.4);
+}
+
+#ta-best-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.best-player-name {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ta-laps-section {
+  width: 100%;
+  margin-top: 1rem;
+  background: rgba(20, 22, 37, 0.2);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.ta-laps-section h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 0.5rem;
+}
+
+.laps-container {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.laps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.lap-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border-left: 3px solid var(--neon-blue);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.lap-item.lap-warn {
+  border-left-color: var(--neon-red);
+}
+
+.lap-item .lap-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.lap-item .lap-time {
+  color: #fff;
+  font-weight: 700;
+}
+
+.lap-empty {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
 
 
 

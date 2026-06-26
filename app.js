@@ -66,12 +66,16 @@ const RANDOM_DIRECTIONS = [
 ];
 
 // 操作シャッフルギミック関連
-let isShuffleEnabled = false;      // ギミック自体が有効か
+let isShuffleEnabled = true;       // ギミック自体が有効か（常時有効）
 let isShuffledActive = false;      // 実際に今シャッフル状態か
 let isShuffleCooldown = false;     // クールダウン中か
 const SHUFFLE_DURATION_MS = 10000; // 操作が狂う時間 (10秒)
 let cooldownTimer = null;          // 自動復旧用タイマー
 let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
+
+// プレイヤー情報
+let playerName = localStorage.getItem('toio_player_name') || 'プレイヤー1';
+let taBestPlayer = localStorage.getItem('toio_ta_best_player') || '';
 
 // タイムアタック関連変数
 let taState = 'idle'; // 'idle' | 'ready' | 'countdown' | 'running' | 'finished'
@@ -81,6 +85,7 @@ let taTimerInterval = null;
 let taCountdownTimer = null;
 let taCountdownVal = 3;
 let taBestTime = localStorage.getItem('toio_ta_best') !== null ? parseFloat(localStorage.getItem('toio_ta_best')) : null;
+let taLaps = [];                         // ラップタイム配列
 let hasTriggeredExclamationTrap = false; // 「!」トラップ発動済みフラグ
 let hasTriggeredQuestionTrap = false;    // 「?」トラップ発動済みフラグ
 let lastDetectedCard = null;             // 直前に検出したカードマーク
@@ -140,7 +145,6 @@ const directionElements = {
 };
 
 // 操作シャッフル用DOM
-const chkShuffleEnable = document.getElementById('chk-shuffle-enable');
 const shuffleStatusPanel = document.getElementById('shuffle-status-panel');
 const shuffleStatusText = document.getElementById('shuffle-status-text');
 const shuffleIcon = document.getElementById('shuffle-icon');
@@ -149,6 +153,9 @@ const shuffleIcon = document.getElementById('shuffle-icon');
 const taStatus = document.getElementById('ta-status');
 const taTimer = document.getElementById('ta-timer');
 const taBest = document.getElementById('ta-best');
+const taBestPlayerDisplay = document.getElementById('ta-best-player');
+const playerNameInput = document.getElementById('player-name-input');
+const taLapsList = document.getElementById('ta-laps-list');
 const btnResetBest = document.getElementById('btn-reset-best');
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownNumber = document.getElementById('countdown-number');
@@ -338,9 +345,25 @@ function handleIdNotification(event) {
       if (cardMark === '!' && !hasTriggeredExclamationTrap) {
         hasTriggeredExclamationTrap = true;
         triggerShuffleGimmick("⚠️ 罠 [!] 検知");
+
+        // タイムアタック中ならラップタイム記録
+        if (taState === 'running') {
+          const lapTime = performance.now() - taStartTime;
+          taLaps.push({ card: '!', time: lapTime });
+          updateLapsUI();
+          addLog(`⏱️ ラップ記録 [!] : ${formatTime(lapTime)}`, "success");
+        }
       } else if (cardMark === '?' && !hasTriggeredQuestionTrap) {
         hasTriggeredQuestionTrap = true;
         triggerShuffleGimmick("⚠️ 罠 [?] 検知");
+
+        // タイムアタック中ならラップタイム記録
+        if (taState === 'running') {
+          const lapTime = performance.now() - taStartTime;
+          taLaps.push({ card: '?', time: lapTime });
+          updateLapsUI();
+          addLog(`⏱️ ラップ記録 [?] : ${formatTime(lapTime)}`, "success");
+        }
       }
     }
 
@@ -384,18 +407,43 @@ function updateCoordinatesUI(angle, cardMark, isOnMat) {
 // ==========================================================================
 // 操作シャッフル (パニックトラップ) クールダウンタイマー制御
 // ==========================================================================
-chkShuffleEnable.addEventListener('change', (e) => {
-  isShuffleEnabled = e.target.checked;
-  if (isShuffleEnabled) {
-    addLog("操作シャッフルギミックを有効にしました。マットやカードに乗ると発動します！", "system");
-    if (isToioOnMat && !isShuffleCooldown) {
-      triggerShuffleGimmick("ギミックON");
-    }
-  } else {
-    addLog("操作シャッフルギミックを無効にしました。", "system");
-    stopShuffleGimmick();
-  }
+// ==========================================================================
+// プレイヤー名入力イベント
+// ==========================================================================
+playerNameInput.addEventListener('input', (e) => {
+  playerName = e.target.value.trim() || 'プレイヤー1';
+  localStorage.setItem('toio_player_name', playerName);
 });
+
+/**
+ * ラップタイム表示UIの更新
+ */
+function updateLapsUI() {
+  taLapsList.innerHTML = '';
+  if (taLaps.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'lap-empty';
+    li.textContent = 'ラップタイムはありません';
+    taLapsList.appendChild(li);
+    return;
+  }
+  taLaps.forEach((lap, idx) => {
+    const li = document.createElement('li');
+    li.className = `lap-item ${lap.card === '!' ? 'lap-warn' : ''}`;
+    
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'lap-label';
+    labelSpan.textContent = `LAP ${idx + 1} (${lap.card})`;
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'lap-time';
+    timeSpan.textContent = formatTime(lap.time);
+    
+    li.appendChild(labelSpan);
+    li.appendChild(timeSpan);
+    taLapsList.appendChild(li);
+  });
+}
 
 /**
  * トラップ起動処理 (4秒間シャッフル発動 ➡ 自動通常復帰 & クールダウン)
@@ -496,12 +544,8 @@ function startRandomDrive() {
   if (!isConnectedToio) return;
   if (isRandomDriving) return;
 
-  if (isShuffleEnabled) {
-    chkShuffleEnable.checked = false;
-    isShuffleEnabled = false;
-    stopShuffleGimmick();
-    addLog("自律走行のため、操作シャッフルを自動的にOFFにしました。", "system");
-  }
+  // 自律走行開始時はシャッフル状態（発動中のタイマーなど）を一旦リセット
+  stopShuffleGimmick();
 
   isRandomDriving = true;
   btnRandomStart.disabled = true;
@@ -841,8 +885,8 @@ function handleGamepadInput(gp) {
   }
 
   if (!isKeyboardControlling() && !isRandomDriving) {
-    // タイムアタックでカウントダウン中、または準備中（フライング防止）は操縦入力をロック
-    const isTaLocked = (taState === 'ready' || taState === 'countdown');
+    // タイムアタックでカウントダウン中、準備中（フライング防止）、またはゴール後（finished）は操縦入力をロック
+    const isTaLocked = (taState === 'ready' || taState === 'countdown' || taState === 'finished');
 
     let leftSpeed = 0;
     let rightSpeed = 0;
@@ -988,8 +1032,8 @@ function processKeyboardDrive() {
     return;
   }
 
-  // タイムアタックでカウントダウン中、または準備中（フライング防止）は操縦入力をロック
-  const isTaLocked = (taState === 'ready' || taState === 'countdown');
+  // タイムアタックでカウントダウン中、準備中（フライング防止）、またはゴール後（finished）は操縦入力をロック
+  const isTaLocked = (taState === 'ready' || taState === 'countdown' || taState === 'finished');
 
   let leftSpeed = 0;
   let rightSpeed = 0;
@@ -1057,8 +1101,14 @@ guideToggle.addEventListener('click', () => {
 function initTaBestTimeDisplay() {
   if (taBestTime !== null) {
     taBest.textContent = formatTime(taBestTime);
+    if (taBestPlayer) {
+      taBestPlayerDisplay.textContent = `by ${taBestPlayer}`;
+    } else {
+      taBestPlayerDisplay.textContent = '';
+    }
   } else {
     taBest.textContent = "--:--.--";
+    taBestPlayerDisplay.textContent = '';
   }
 }
 
@@ -1082,6 +1132,8 @@ function resetTimeAttackToIdle() {
   taElapsedTime = 0;
   hasTriggeredExclamationTrap = false;
   hasTriggeredQuestionTrap = false;
+  taLaps = []; // ラップタイムを初期化
+  updateLapsUI(); // UI更新
   
   taTimer.textContent = "00:00.00";
   countdownOverlay.classList.add('hidden');
@@ -1115,6 +1167,8 @@ function setupTimeAttack() {
   taElapsedTime = 0;
   hasTriggeredExclamationTrap = false;
   hasTriggeredQuestionTrap = false;
+  taLaps = []; // ラップタイムを初期化
+  updateLapsUI(); // UI更新
   
   taTimer.textContent = "00:00.00";
   countdownOverlay.classList.add('hidden');
@@ -1240,7 +1294,7 @@ function finishTimeAttack() {
   }
 
   const timeStr = formatTime(taElapsedTime);
-  addLog(`🎉 ゴール！ タイム: ${timeStr}`, "success");
+  addLog(`🎉 ゴール！ タイム: ${timeStr} (by ${playerName})`, "success");
   playSound(9); // コイン音（ゴールファンファーレ）
   setLED(0, 195, 227, 0); // 青点灯
 
@@ -1250,30 +1304,39 @@ function finishTimeAttack() {
 
   if (isNewRecord) {
     taBestTime = taElapsedTime;
+    taBestPlayer = playerName;
     localStorage.setItem('toio_ta_best', taBestTime);
-    taBest.textContent = formatTime(taBestTime);
-    addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)}`, "success");
+    localStorage.setItem('toio_ta_best_player', taBestPlayer);
     
-    resultRecordMsg.textContent = "🏆 NEW RECORD! 🏆";
+    taBest.textContent = formatTime(taBestTime);
+    taBestPlayerDisplay.textContent = `by ${taBestPlayer}`;
+    addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)} (by ${taBestPlayer})`, "success");
+    
+    resultRecordMsg.textContent = `🏆 NEW RECORD! (by ${taBestPlayer}) 🏆`;
     resultRecordMsg.style.color = "var(--neon-green)";
     resultRecordMsg.style.textShadow = "0 0 10px rgba(57, 255, 20, 0.6)";
 
     // ベスト更新フラッシュ効果（LED）
     flashLED(0, 195, 227, 3);
   } else {
-    resultRecordMsg.textContent = `BEST TIME: ${formatTime(taBestTime)}`;
+    resultRecordMsg.textContent = `BEST TIME: ${formatTime(taBestTime)} (by ${taBestPlayer || '不明'})`;
     resultRecordMsg.style.color = "var(--neon-yellow)";
     resultRecordMsg.style.textShadow = "0 0 10px rgba(255, 230, 0, 0.4)";
   }
 
   resultOverlay.classList.remove('hidden');
+  
+  // ゴールした瞬間にtoioを完全停止
+  controlMotors(0, 1, 0, 1);
 }
 
 // ベストタイムのリセット
 btnResetBest.addEventListener('click', () => {
   if (confirm("ベストタイムの記録をリセットしますか？")) {
     taBestTime = null;
+    taBestPlayer = '';
     localStorage.removeItem('toio_ta_best');
+    localStorage.removeItem('toio_ta_best_player');
     initTaBestTimeDisplay();
     addLog("ベストタイムの記録をリセットしました。", "system");
   }
@@ -1296,4 +1359,5 @@ btnCloseResult.addEventListener('click', () => {
 });
 
 // 初期化実行
+playerNameInput.value = playerName;
 initTaBestTimeDisplay();

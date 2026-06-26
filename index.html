@@ -31,6 +31,12 @@
         </div>
         
         <div class="ta-container">
+          <!-- プレイヤー名入力欄 -->
+          <div class="player-name-container">
+            <label for="player-name-input"><i data-lucide="user" class="icon-user"></i> プレイヤー名</label>
+            <input type="text" id="player-name-input" value="プレイヤー1" maxlength="15" placeholder="名前を入力...">
+          </div>
+
           <!-- メインタイマー表示 -->
           <div class="ta-display">
             <span id="ta-status" class="ta-status-label">READY - スタート位置 "→" に置いてください</span>
@@ -40,8 +46,21 @@
           <!-- ベストタイム表示 -->
           <div class="ta-best-container">
             <span class="best-label">🏆 BEST TIME</span>
-            <span id="ta-best" class="best-digits">--:--.--</span>
+            <div id="ta-best-wrapper">
+              <span id="ta-best" class="best-digits">--:--.--</span>
+              <span id="ta-best-player" class="best-player-name"></span>
+            </div>
             <button id="btn-reset-best" class="btn-clear" style="margin-top: 0.25rem;">記録リセット</button>
+          </div>
+        </div>
+
+        <!-- ラップタイム表示 -->
+        <div class="ta-laps-section">
+          <h3><i data-lucide="flag"></i> ラップタイム (！ / ？ 通過)</h3>
+          <div class="laps-container">
+            <ul id="ta-laps-list" class="laps-list">
+              <li class="lap-empty">ラップタイムはありません</li>
+            </ul>
           </div>
         </div>
 
@@ -158,18 +177,14 @@
           <!-- 操作シャッフルギミック -->
           <div class="sub-group">
             <label>操作シャッフルギミック (パニックトラップ)</label>
-            <div class="shuffle-control-row">
-              <label class="switch">
-                <input type="checkbox" id="chk-shuffle-enable">
-                <span class="slider round"></span>
-              </label>
-              <span class="switch-label">ギミック有効</span>
-            </div>
             <!-- シャッフル状態表示パネル -->
-            <div class="shuffle-status-panel normal" id="shuffle-status-panel">
+            <div class="shuffle-status-panel normal" id="shuffle-status-panel" style="margin-top: 0.5rem;">
               <i data-lucide="shield-check" id="shuffle-icon"></i>
               <span id="shuffle-status-text">通常操作モード</span>
             </div>
+            <p class="gimmick-desc" style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.5rem; line-height: 1.3;">
+              ※マットへの侵入や「！」・「？」カードを通過すると、自動で10秒間操作がシャッフルされます（常時有効）。
+            </p>
           </div>
         </div>
       </section>
