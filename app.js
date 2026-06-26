@@ -176,6 +176,7 @@ const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownNumber = document.getElementById('countdown-number');
 const resultOverlay = document.getElementById('result-overlay');
 const resultTimeVal = document.getElementById('result-time-val');
+const resultRankVal = document.getElementById('result-rank-val');
 const resultRecordMsg = document.getElementById('result-record-msg');
 const btnCloseResult = document.getElementById('btn-close-result');
 
@@ -439,7 +440,8 @@ function checkPlayerNameDuplicate() {
   const name = playerNameInput.value.trim();
   if (!name) return false;
 
-  const isDuplicate = taRanking.some(item => item.name.toLowerCase() === name.toLowerCase());
+  // ランキング上位10名（現在リーダーボードに載っているプレイヤー）の中に重複があるかチェック
+  const isDuplicate = taRanking.slice(0, 10).some(item => item.name.toLowerCase() === name.toLowerCase());
   
   if (isDuplicate) {
     playerNameError.classList.remove('hidden');
@@ -470,7 +472,8 @@ function updateRankingUI() {
     return;
   }
 
-  taRanking.forEach((item, idx) => {
+  // 上位10名を表示
+  taRanking.slice(0, 10).forEach((item, idx) => {
     const li = document.createElement('li');
     li.className = `ranking-item rank-${idx + 1}`;
     
@@ -1370,8 +1373,8 @@ function updateTaUI() {
   if (taState === 'idle') {
     taStatus.textContent = "READY - スタート位置 \"→\" に置いてください";
   } else if (taState === 'ready') {
-    // プレイヤー名の重複を判定
-    const isDuplicate = taRanking.some(item => item.name.toLowerCase() === playerNameInput.value.trim().toLowerCase());
+    // プレイヤー名の重複を判定（上位10名に限定）
+    const isDuplicate = taRanking.slice(0, 10).some(item => item.name.toLowerCase() === playerNameInput.value.trim().toLowerCase());
     if (isDuplicate) {
       taStatus.textContent = "警告：プレイヤー名がランキングと重複しています";
       taStatus.className = "ta-status-label countdown"; // 赤字警告
@@ -1404,7 +1407,6 @@ function finishTimeAttack() {
   }
 
   const timeStr = formatTime(taElapsedTime);
-  addLog(`🎉 ゴール！ タイム: ${timeStr} (by ${activePlayerName})`, "success");
   playSound(9); // コイン音（ゴールファンファーレ）
   setLED(0, 195, 227, 0); // 青点灯
 
@@ -1418,7 +1420,18 @@ function finishTimeAttack() {
   };
   taRanking.push(newRecordItem);
   taRanking.sort((a, b) => a.time - b.time); // 昇順ソート
-  taRanking = taRanking.slice(0, 5); // 上位5件
+  
+  // 総合順位の算出
+  const currentRank = taRanking.indexOf(newRecordItem) + 1;
+  resultRankVal.textContent = `総合 ${currentRank} 位`;
+  
+  addLog(`🎉 ゴール！ 総合順位: ${currentRank}位 / タイム: ${timeStr} (by ${activePlayerName})`, "success");
+
+  // メモリ肥大化防止のため最大100件まで保持
+  if (taRanking.length > 100) {
+    taRanking = taRanking.slice(0, 100);
+  }
+  
   localStorage.setItem('toio_ta_ranking', JSON.stringify(taRanking));
   updateRankingUI(); // ランキング表示を更新
 
