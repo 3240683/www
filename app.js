@@ -781,6 +781,19 @@ function handleGamepadInput(gp) {
 
   updateButtonNodesUI(btnA, btnB, btnX, btnY);
 
+  // 全ボタンの押し下げ監視デバッグログ
+  gp.buttons.forEach((btn, idx) => {
+    const btnKey = `raw_btn_${idx}`;
+    if (btn.pressed) {
+      if (!prevButtonsState[btnKey]) {
+        addLog(`🎮 コントローラー: ボタン ${idx} が押されました。`, "controller");
+        prevButtonsState[btnKey] = true;
+      }
+    } else {
+      prevButtonsState[btnKey] = false;
+    }
+  });
+
   detectButtonPress('A', btnA, () => {
     if (isRandomDriving) stopRandomDrive("コントローラー操作");
     addLog("[A] ボタンが押されました - 緑LED & 接続音", "controller");
@@ -806,11 +819,18 @@ function handleGamepadInput(gp) {
     playSound(9);
   });
 
-  // Lボタン(4)とRボタン(5)の同時押しによるカウントダウン開始判定
-  const btnL = gp.buttons[4]?.pressed || false;
-  const btnR = gp.buttons[5]?.pressed || false;
+  // L/R または Joy-Con 単体時の SL/SR の同時押しによるスタート判定
+  // 1) 通常L/R、またはJoy-Con単体のSL/SR (ボタン4と5)
+  // 2) 通常ZL/ZR、または一部OSのJoy-Con単体SL/SR (ボタン6と7)
+  // 3) 一部OSのJoy-Con単体SL/SRペア (ボタン14と15, または15と16)
+  const isPair1 = gp.buttons[4]?.pressed && gp.buttons[5]?.pressed;
+  const isPair2 = gp.buttons[6]?.pressed && gp.buttons[7]?.pressed;
+  const isPair3 = gp.buttons[14]?.pressed && gp.buttons[15]?.pressed;
+  const isPair4 = gp.buttons[15]?.pressed && gp.buttons[16]?.pressed;
 
-  if (btnL && btnR && taState === 'ready') {
+  const isBumperSimultaneousPressed = isPair1 || isPair2 || isPair3 || isPair4;
+
+  if (isBumperSimultaneousPressed && taState === 'ready') {
     startCountdown();
   }
 
