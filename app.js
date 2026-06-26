@@ -69,7 +69,7 @@ const RANDOM_DIRECTIONS = [
 let isShuffleEnabled = false;      // ギミック自体が有効か
 let isShuffledActive = false;      // 実際に今シャッフル状態か
 let isShuffleCooldown = false;     // クールダウン中か
-const SHUFFLE_DURATION_MS = 4000; // 操作が狂う時間 (4秒)
+const SHUFFLE_DURATION_MS = 10000; // 操作が狂う時間 (10秒)
 let cooldownTimer = null;          // 自動復旧用タイマー
 let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
 
@@ -81,6 +81,9 @@ let taTimerInterval = null;
 let taCountdownTimer = null;
 let taCountdownVal = 3;
 let taBestTime = localStorage.getItem('toio_ta_best') !== null ? parseFloat(localStorage.getItem('toio_ta_best')) : null;
+let hasTriggeredExclamationTrap = false; // 「!」トラップ発動済みフラグ
+let hasTriggeredQuestionTrap = false;    // 「?」トラップ発動済みフラグ
+let lastDetectedCard = null;             // 直前に検出したカードマーク
 
 // 送信制御（スロットリング＆変更検知）
 let lastLeftSpeed = 0;
@@ -149,6 +152,10 @@ const taBest = document.getElementById('ta-best');
 const btnResetBest = document.getElementById('btn-reset-best');
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownNumber = document.getElementById('countdown-number');
+const resultOverlay = document.getElementById('result-overlay');
+const resultTimeVal = document.getElementById('result-time-val');
+const resultRecordMsg = document.getElementById('result-record-msg');
+const btnCloseResult = document.getElementById('btn-close-result');
 
 // ==========================================================================
 // ログ出力用ユーティリティ
@@ -301,16 +308,40 @@ function handleIdNotification(event) {
     currentAngle = angle;
     isToioOnMat = true;
 
-    // タイムアタック：スタートカード（→）とゴールカード（!）の検知処理
-    if (cardMark === '→') {
-      setupTimeAttack();
-    } else if (cardMark === '!' && taState === 'running') {
-      finishTimeAttack();
+    // デバッグログ：カード検出時に1度だけ出力
+    if (cardMark !== lastDetectedCard && lastDetectedCard !== `${cardMark}_warned`) {
+      addLog(`カード検出: [${cardMark}] (ID: ${standardId})`, "system");
+      lastDetectedCard = cardMark;
     }
 
-    // トラップ発動判定（スタート位置とゴール位置では操作シャッフルを発動させない）
-    if (isShuffleEnabled && !isShuffleCooldown && cardMark !== '→' && cardMark !== '!') {
-      triggerShuffleGimmick(`簡易カード [${cardMark}]`);
+    // タイムアタック：スタートカード（→）、ゴールカード（1）、リトライカード（0）の検知処理
+    if (cardMark === '→') {
+      if (taState === 'idle' || taState === 'finished') {
+        setupTimeAttack();
+      } else {
+        // スタートカード検知警告：カウントダウン中や走行中など、本当にスタックしている時のみ明示
+        if (taState === 'countdown' || taState === 'running') {
+          if (lastDetectedCard === '→') {
+            lastDetectedCard = '→_warned'; // 一時的に別マークにして警告の連発を防ぐ
+            addLog(`⚠️ スタート位置 [→] を検出しましたが、現在のタイムアタック状態 [${taState}] では初期設定できません。「0」カードに置いてリセットしてください。`, "error");
+          }
+        }
+      }
+    } else if (cardMark === '1' && taState === 'running') {
+      finishTimeAttack();
+    } else if (cardMark === '0') {
+      resetTimeAttackToIdle();
+    }
+
+    // トラップ発動判定（! と ? のカードを踏んだときのみ操作シャッフルを発動、1挑戦に各1回限り）
+    if (isShuffleEnabled) {
+      if (cardMark === '!' && !hasTriggeredExclamationTrap) {
+        hasTriggeredExclamationTrap = true;
+        triggerShuffleGimmick("⚠️ 罠 [!] 検知");
+      } else if (cardMark === '?' && !hasTriggeredQuestionTrap) {
+        hasTriggeredQuestionTrap = true;
+        triggerShuffleGimmick("⚠️ 罠 [?] 検知");
+      }
     }
 
     updateCoordinatesUI(angle, cardMark, true);
@@ -319,6 +350,7 @@ function handleIdNotification(event) {
     // 3) Position ID / Standard ID Missed (マットやカードから離れた状態)
     const wasOnMat = isToioOnMat;
     isToioOnMat = false;
+    lastDetectedCard = null; // 離脱時に検出カード履歴をリセット
     
     // 自律走行中にマット/カードから落ちた場合は安全のため緊急停止
     if (isRandomDriving && wasOnMat) {
@@ -326,11 +358,7 @@ function handleIdNotification(event) {
       stopRandomDrive();
     }
 
-    // トラップの即時復旧処理 (持ち上げて離した場合はクールダウンを待たずに復帰)
-    if (isShuffledActive) {
-      stopShuffleGimmick();
-      addLog("マットやカードから離れたため、操作が正常に戻りました。", "system");
-    }
+
 
     updateCoordinatesUI(null, null, false);
   }
@@ -379,7 +407,8 @@ function triggerShuffleGimmick(source) {
   shuffleMapping();
   updateShuffleUI(true);
 
-  addLog(`⚠️【トラップ発動】${source}を検知！4秒間操作がシャッフルされます！`, "error");
+  const durationSec = SHUFFLE_DURATION_MS / 1000;
+  addLog(`⚠️【トラップ発動】${source}を検知！${durationSec}秒間操作がシャッフルされます！`, "error");
   playSound(1); 
   setLED(255, 0, 0, 50); 
 
@@ -777,13 +806,17 @@ function handleGamepadInput(gp) {
     playSound(9);
   });
 
-  // 上ボタン(12)と下ボタン(13)の同時押しによるカウントダウン開始判定
-  if (gp.buttons.length > 13) {
-    const dpadUp = gp.buttons[12]?.pressed || false;
-    const dpadDown = gp.buttons[13]?.pressed || false;
-    if (dpadUp && dpadDown && taState === 'ready') {
-      startCountdown();
-    }
+  // 上ボタンと下ボタンの同時押しによるカウントダウン開始判定
+  // 1) 十字キーの上(12)と下(13)の同時押し、または 2) 右側ボタンのX(3)とB(0)の同時押し
+  const dpadUp = gp.buttons[12]?.pressed || false;
+  const dpadDown = gp.buttons[13]?.pressed || false;
+  const actionUp = gp.buttons[3]?.pressed || false; // Switchでの上ボタン (X)
+  const actionDown = gp.buttons[0]?.pressed || false; // Switchでの下ボタン (B)
+
+  const isUpAndDownPressed = (dpadUp && dpadDown) || (actionUp && actionDown);
+
+  if (isUpAndDownPressed && taState === 'ready') {
+    startCountdown();
   }
 
   if (Math.abs(xValue) > 0 || Math.abs(yValue) > 0) {
@@ -1014,6 +1047,39 @@ function initTaBestTimeDisplay() {
   }
 }
 
+// タイムアタック強制リセット (0 カード検知時)
+function resetTimeAttackToIdle() {
+  if (taState === 'idle') return; // すでに待機中なら何もしない
+
+  stopRandomDrive(); // 自律走行中なら停止
+  stopShuffleGimmick(); // 操作シャッフルを解除・リセット
+
+  if (taTimerInterval) {
+    cancelAnimationFrame(taTimerInterval);
+    taTimerInterval = null;
+  }
+  if (taCountdownTimer) {
+    clearTimeout(taCountdownTimer);
+    taCountdownTimer = null;
+  }
+
+  taState = 'idle';
+  taElapsedTime = 0;
+  hasTriggeredExclamationTrap = false;
+  hasTriggeredQuestionTrap = false;
+  
+  taTimer.textContent = "00:00.00";
+  countdownOverlay.classList.add('hidden');
+  resultOverlay.classList.add('hidden');
+  
+  updateTaUI();
+  
+  addLog("🔄 リトライカード [0] を検出：タイムアタックを強制リセットしました。", "system");
+  
+  playSound(1); // ダメージ音（リセット音代用）
+  setLED(255, 0, 85, 50); // 一時的にネオンレッドで警告点灯
+}
+
 // タイムアタック初期設定 (→ カード検知時)
 function setupTimeAttack() {
   if (taState === 'ready') return; // すでに準備完了なら何もしない
@@ -1032,9 +1098,12 @@ function setupTimeAttack() {
 
   taState = 'ready';
   taElapsedTime = 0;
+  hasTriggeredExclamationTrap = false;
+  hasTriggeredQuestionTrap = false;
   
   taTimer.textContent = "00:00.00";
   countdownOverlay.classList.add('hidden');
+  resultOverlay.classList.add('hidden');
   
   updateTaUI();
   
@@ -1091,7 +1160,7 @@ function startTaTimer() {
   updateTaUI();
   
   taStartTime = performance.now();
-  addLog("🚀 タイマースタート！ゴール [!] を目指して操縦してください！", "success");
+  addLog("🚀 タイマースタート！ゴール [1] を目指して操縦してください！", "success");
   
   taTimerInterval = requestAnimationFrame(updateTaTimerLoop);
 }
@@ -1143,7 +1212,7 @@ function updateTaUI() {
   }
 }
 
-// タイムアタック完走 (! カード検知時)
+// タイムアタック完走 (1 カード検知時)
 function finishTimeAttack() {
   if (taState !== 'running') return;
 
@@ -1155,20 +1224,34 @@ function finishTimeAttack() {
     taTimerInterval = null;
   }
 
-  addLog(`🎉 ゴール！ タイム: ${formatTime(taElapsedTime)}`, "success");
+  const timeStr = formatTime(taElapsedTime);
+  addLog(`🎉 ゴール！ タイム: ${timeStr}`, "success");
   playSound(9); // コイン音（ゴールファンファーレ）
   setLED(0, 195, 227, 0); // 青点灯
 
-  // ベストタイム判定
-  if (taBestTime === null || taElapsedTime < taBestTime) {
+  resultTimeVal.textContent = timeStr;
+
+  const isNewRecord = (taBestTime === null || taElapsedTime < taBestTime);
+
+  if (isNewRecord) {
     taBestTime = taElapsedTime;
     localStorage.setItem('toio_ta_best', taBestTime);
     taBest.textContent = formatTime(taBestTime);
     addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)}`, "success");
     
+    resultRecordMsg.textContent = "🏆 NEW RECORD! 🏆";
+    resultRecordMsg.style.color = "var(--neon-green)";
+    resultRecordMsg.style.textShadow = "0 0 10px rgba(57, 255, 20, 0.6)";
+
     // ベスト更新フラッシュ効果（LED）
     flashLED(0, 195, 227, 3);
+  } else {
+    resultRecordMsg.textContent = `BEST TIME: ${formatTime(taBestTime)}`;
+    resultRecordMsg.style.color = "var(--neon-yellow)";
+    resultRecordMsg.style.textShadow = "0 0 10px rgba(255, 230, 0, 0.4)";
   }
+
+  resultOverlay.classList.remove('hidden');
 }
 
 // ベストタイムのリセット
@@ -1191,6 +1274,11 @@ async function flashLED(r, g, b, count) {
   }
   await setLED(r, g, b, 0);
 }
+
+// 結果オーバーレイ閉じるイベント
+btnCloseResult.addEventListener('click', () => {
+  resultOverlay.classList.add('hidden');
+});
 
 // 初期化実行
 initTaBestTimeDisplay();
