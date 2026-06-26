@@ -67,7 +67,10 @@
 
         <!-- ランキング（リーダーボード）表示 -->
         <div class="ta-ranking-section">
-          <h3><i data-lucide="trophy"></i> リーダーボード (TOP 5)</h3>
+          <div class="section-header-flex" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.5rem; margin-bottom: 0.75rem;">
+            <h3 style="border: none; margin: 0; padding: 0;"><i data-lucide="trophy"></i> リーダーボード (TOP 5)</h3>
+            <button id="btn-reset-ranking" class="btn-clear" style="font-size: 0.75rem; color: var(--text-secondary);">ランキングクリア</button>
+          </div>
           <div class="ranking-container">
             <ol id="ta-ranking-list" class="ranking-list">
               <li class="ranking-empty">記録がありません</li>

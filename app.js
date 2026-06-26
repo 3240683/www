@@ -171,6 +171,7 @@ const playerNameError = document.getElementById('player-name-error');
 const taLapsList = document.getElementById('ta-laps-list');
 const taRankingList = document.getElementById('ta-ranking-list');
 const btnResetBest = document.getElementById('btn-reset-best');
+const btnResetRanking = document.getElementById('btn-reset-ranking');
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownNumber = document.getElementById('countdown-number');
 const resultOverlay = document.getElementById('result-overlay');
@@ -1453,17 +1454,24 @@ function finishTimeAttack() {
 
 // ベストタイムのリセット
 btnResetBest.addEventListener('click', () => {
-  if (confirm("ベストタイムとランキングの記録をすべてリセットしますか？")) {
+  if (confirm("ベストタイムの記録をリセットしますか？")) {
     taBestTime = null;
     taBestPlayer = '';
-    taRanking = [];
     localStorage.removeItem('toio_ta_best');
     localStorage.removeItem('toio_ta_best_player');
-    localStorage.removeItem('toio_ta_ranking');
     initTaBestTimeDisplay();
+    addLog("ベストタイムの記録をリセットしました。", "system");
+  }
+});
+
+// ランキングのリセット
+btnResetRanking.addEventListener('click', () => {
+  if (confirm("ランキングの記録をすべて削除しますか？")) {
+    taRanking = [];
+    localStorage.removeItem('toio_ta_ranking');
     updateRankingUI();
-    checkPlayerNameDuplicate(); // 重複エラー表示を解消
-    addLog("ベストタイムとランキングの記録をリセットしました。", "system");
+    checkPlayerNameDuplicate(); // 重複エラー警告の解消
+    addLog("ランキングの記録を削除しました。", "system");
   }
 });
 
