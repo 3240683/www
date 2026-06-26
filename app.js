@@ -806,16 +806,11 @@ function handleGamepadInput(gp) {
     playSound(9);
   });
 
-  // 上ボタンと下ボタンの同時押しによるカウントダウン開始判定
-  // 1) 十字キーの上(12)と下(13)の同時押し、または 2) 右側ボタンのX(3)とB(0)の同時押し
-  const dpadUp = gp.buttons[12]?.pressed || false;
-  const dpadDown = gp.buttons[13]?.pressed || false;
-  const actionUp = gp.buttons[3]?.pressed || false; // Switchでの上ボタン (X)
-  const actionDown = gp.buttons[0]?.pressed || false; // Switchでの下ボタン (B)
+  // Lボタン(4)とRボタン(5)の同時押しによるカウントダウン開始判定
+  const btnL = gp.buttons[4]?.pressed || false;
+  const btnR = gp.buttons[5]?.pressed || false;
 
-  const isUpAndDownPressed = (dpadUp && dpadDown) || (actionUp && actionDown);
-
-  if (isUpAndDownPressed && taState === 'ready') {
+  if (btnL && btnR && taState === 'ready') {
     startCountdown();
   }
 
@@ -1108,7 +1103,7 @@ function setupTimeAttack() {
   updateTaUI();
   
   addLog("🏁 スタート位置 [→] を検出：操作初期化＆タイマーをリセットしました。", "success");
-  addLog("👉 コントローラーの「上＋下」同時押し（キーボードはW＋S / ↑＋↓）でスタート！", "system");
+  addLog("👉 コントローラーの「L＋R」同時押し（キーボードはW＋S / ↑＋↓）でスタート！", "system");
   
   playSound(2); // 接続音
   setLED(255, 230, 0, 0); // ネオンイエロー点灯
@@ -1198,7 +1193,7 @@ function updateTaUI() {
   if (taState === 'idle') {
     taStatus.textContent = "READY - スタート位置 \"→\" に置いてください";
   } else if (taState === 'ready') {
-    taStatus.textContent = "準備完了 - 同時押しでスタート！";
+    taStatus.textContent = "準備完了 - L＋R 同時押しでスタート！";
     taStatus.classList.add('ready');
   } else if (taState === 'countdown') {
     taStatus.textContent = "カウントダウン中...";
