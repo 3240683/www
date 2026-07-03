@@ -1155,6 +1155,7 @@ function resetTimeAttackToIdle() {
   resultOverlay.classList.add('hidden');
   
   updateTaUI();
+  checkPlayerNameDuplicate();
   
   addLog("🔄 リトライカード [0] を検出：タイムアタックを強制リセットしました。", "system");
   
@@ -1190,6 +1191,7 @@ function setupTimeAttack() {
   resultOverlay.classList.add('hidden');
   
   updateTaUI();
+  checkPlayerNameDuplicate();
   
   addLog("🏁 スタート位置 [→] を検出：操作初期化＆タイマーをリセットしました。", "success");
   addLog("👉 コントローラーの「L＋R」同時押し（キーボードはW＋S / ↑＋↓）でスタート！", "system");
@@ -1456,6 +1458,7 @@ btnCloseResult.addEventListener('click', () => {
   }
   tempRecordItem = null;
   resultOverlay.classList.add('hidden');
+  checkPlayerNameDuplicate(); // 重複エラー警告の再評価・更新
 });
 
 // 初期化実行
