@@ -1223,14 +1223,49 @@ input:checked + .slider:before {
 
 .ranking-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
   background: rgba(0, 0, 0, 0.25);
   padding: 0.5rem 0.8rem;
   border-radius: 6px;
   border-left: 3px solid rgba(255, 255, 255, 0.1);
   font-size: 0.85rem;
   transition: transform 0.15s ease;
+}
+
+.ranking-item .rank-info {
+  flex-shrink: 0;
+}
+
+.ranking-item .rank-time-date {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* 個別削除ボタンのスタイル */
+.btn-delete-row {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-delete-row:hover {
+  color: var(--neon-red);
+  background: rgba(255, 0, 85, 0.15);
+  transform: scale(1.1);
+}
+
+.btn-delete-row svg {
+  width: 14px;
+  height: 14px;
 }
 
 .ranking-item:hover {

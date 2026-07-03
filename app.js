@@ -502,10 +502,42 @@ function updateRankingUI() {
     timeDateDiv.appendChild(timeSpan);
     timeDateDiv.appendChild(dateSpan);
     
+    // 個別削除ボタン
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-delete-row';
+    deleteBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+    deleteBtn.title = 'この記録を削除';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // liへのクリック伝播防止
+      deleteRankingRow(idx);
+    });
+    
     li.appendChild(infoDiv);
     li.appendChild(timeDateDiv);
+    li.appendChild(deleteBtn);
     taRankingList.appendChild(li);
   });
+
+  // 追加されたLucideアイコンをレンダリング
+  lucide.createIcons();
+}
+
+/**
+ * ランキングから特定の行（記録）を削除する
+ */
+function deleteRankingRow(index) {
+  if (index < 0 || index >= taRanking.length) return;
+  const targetItem = taRanking[index];
+  
+  if (confirm(`プレイヤー「${targetItem.name}」のタイム「${formatTime(targetItem.time)}」をランキングから削除しますか？`)) {
+    taRanking.splice(index, 1); // 指定インデックスを削除
+    localStorage.setItem('toio_ta_ranking', JSON.stringify(taRanking));
+    
+    addLog(`🗑️ ランキングから ${targetItem.name} のタイム ${formatTime(targetItem.time)} を削除しました。`, "system");
+    
+    updateRankingUI();
+    checkPlayerNameDuplicate(); // 重複警告状態の更新
+  }
 }
 
 /**
