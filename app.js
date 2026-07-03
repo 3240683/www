@@ -135,8 +135,6 @@ const leftAxisVal = document.getElementById('left-axis-val');
 
 const logBox = document.getElementById('log-box');
 const btnClearLogs = document.getElementById('btn-clear-logs');
-const guideToggle = document.getElementById('guide-toggle');
-const guideContent = document.getElementById('guide-content');
 
 // センサー情報表示用DOM
 const coordAngle = document.getElementById('coord-angle');
@@ -1067,11 +1065,7 @@ btnClearLogs.addEventListener('click', () => {
   addLog("ログをクリアしました。", "system");
 });
 
-guideToggle.addEventListener('click', () => {
-  guideContent.classList.toggle('hidden');
-  const isHidden = guideContent.classList.contains('hidden');
-  addLog(`ヘルプガイドを${isHidden ? '閉じました' : '開きました'}。`, "system");
-});
+
 
 // ==========================================================================
 // タイムアタック (Time Attack) 制御ロジック

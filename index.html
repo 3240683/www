@@ -18,13 +18,61 @@
   
   <div class="app-container">
     <header class="app-header">
-      <h1 id="app-title" class="neon-text">toio &amp; Switch Controller</h1>
-      <p class="subtitle">Web Bluetooth &amp; Gamepad API で toio を操縦しよう</p>
+      <h1 id="app-title" class="neon-text">toioで迷路</h1>
     </header>
 
-    <main class="grid-container">
-      <!-- タイムアタックカード -->
-      <section class="card full-width" id="time-attack-section">
+    <div class="main-layout">
+      <!-- 左カラム：操作ガイドとルール説明 -->
+      <aside class="sidebar-layout">
+        <section class="card" id="guide-card">
+          <div class="card-header">
+            <i data-lucide="help-circle" class="icon-toio"></i>
+            <h2>操作方法とルール</h2>
+          </div>
+          
+          <div class="sidebar-content">
+            <div class="guide-section-block">
+              <h4 class="neon-sub-text" style="color: var(--neon-blue); display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="info" style="width: 16px; height: 16px;"></i> タイムアタックルール</h4>
+              <ul class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <li><strong>スタート:</strong> toioを「→」に置き、READY状態で <strong>L＋R</strong> 同時押しでカウント開始！</li>
+                <li><strong>ゴール:</strong> toioで「1」カードをタッチすると計測が終了し、toioが停止します。</li>
+                <li><strong>リトライ:</strong> やり直したい時は、toioを「0」カードに置くと強制リセットされます。</li>
+              </ul>
+            </div>
+
+            <div class="guide-section-block">
+              <h4 class="neon-sub-text" style="color: var(--neon-red); display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i> シャッフルギミック</h4>
+              <ul class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <li><strong>操作シャッフル:</strong> マットへの侵入や「！」・「？」を通過すると、10秒間前後左右の操作が狂います。</li>
+                <li><strong>ラップタイム:</strong> タイムアタック中に「！」や「？」を通過すると、自動でラップが記録されます。</li>
+              </ul>
+            </div>
+
+            <div class="guide-section-block">
+              <h4 class="neon-sub-text" style="color: var(--neon-yellow); display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="gamepad-2" style="width: 16px; height: 16px;"></i> コントローラー操作</h4>
+              <ul class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <li><strong>スティック:</strong> 前進 / 後退 / 旋回</li>
+                <li><strong>L ＋ R 同時押し:</strong> タイムアタックスタート<br><small style="color: var(--text-dim);">(Joy-Con単体時は <strong>SL ＋ SR</strong>)</small></li>
+                <li><strong>A / B / X / Y:</strong> LEDカラー変更 & 効果音再生</li>
+              </ul>
+            </div>
+
+            <div class="guide-section-block">
+              <h4 class="neon-sub-text" style="color: #90caf9; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="keyboard" style="width: 16px; height: 16px;"></i> キーボード操作</h4>
+              <ul class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <li><strong>W / S / A / D (または矢印キー):</strong> 移動</li>
+                <li><strong>W ＋ S (または ↑ ＋ ↓) 同時押し:</strong> スタート</li>
+                <li><strong>1 / 2 / 3 / 4 キー:</strong> LEDカラー変更 & 効果音再生</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- 右カラム：メインコンテンツ -->
+      <main class="grid-container">
+        <!-- タイムアタックカード -->
+        <section class="card full-width" id="time-attack-section">
         <div class="card-header">
           <i data-lucide="timer" class="icon-timer"></i>
           <h2>タイムアタック (Time Attack)</h2>
@@ -187,36 +235,11 @@
       </section>
     </main>
 
-    <!-- 操作ガイド & キーボード操作 -->
+      </main> <!-- grid-container 終わり -->
+    </div> <!-- main-layout 終わり -->
+
+    <!-- フッター（システムログのみ） -->
     <footer class="app-footer">
-      <div class="guide-toggle" id="guide-toggle">
-        <i data-lucide="help-circle"></i> 操作方法・キーボードでの操作
-      </div>
-      <div class="guide-content hidden" id="guide-content">
-        <div class="guide-grid">
-          <div>
-            <h4>🎮 コントローラー操作</h4>
-            <ul>
-              <li><strong>左スティック:</strong> 前進 / 後退 / 旋回</li>
-              <li><strong>L ＋ R 同時押し:</strong> タイムアタックスタート (READY時、Joy-Con単体時は<strong>SL ＋ SR</strong>)</li>
-              <li><strong>A ボタン:</strong> LED緑点灯 ＋ 接続音</li>
-              <li><strong>B ボタン:</strong> LED赤点灯 ＋ ダメージ音</li>
-              <li><strong>X ボタン:</strong> LED青点灯 ＋ レベルアップ音</li>
-              <li><strong>Y ボタン:</strong> LED黄点灯 ＋ コイン音</li>
-            </ul>
-          </div>
-          <div>
-            <h4>⌨️ キーボード操作 (フォールバック)</h4>
-            <ul>
-              <li><strong>W / ↑ :</strong> 前進</li>
-              <li><strong>S / ↓ :</strong> 後退</li>
-              <li><strong>A / ← :</strong> 左旋回</li>
-              <li><strong>D / → :</strong> 右旋回</li>
-              <li><strong>1, 2, 3, 4:</strong> LEDカラーチェンジ＆効果音</li>
-            </ul>
-          </div>
-        </div>
-      </div>
       <div class="system-logs">
         <div class="log-header">
           <span>システムログ</span>
