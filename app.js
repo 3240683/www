@@ -133,7 +133,6 @@ const padName = document.getElementById('pad-name');
 const leftStick = document.getElementById('left-stick');
 const leftAxisVal = document.getElementById('left-axis-val');
 
-const ledPicker = document.getElementById('led-picker');
 const logBox = document.getElementById('log-box');
 const btnClearLogs = document.getElementById('btn-clear-logs');
 const guideToggle = document.getElementById('guide-toggle');
@@ -143,18 +142,6 @@ const guideContent = document.getElementById('guide-content');
 const coordAngle = document.getElementById('coord-angle');
 const detectedCard = document.getElementById('detected-card');
 const coordStatusText = document.getElementById('coord-status-text');
-
-// ランダム走行用DOM
-const btnRandomStart = document.getElementById('btn-random-start');
-const btnRandomStop = document.getElementById('btn-random-stop');
-
-const directionElements = {
-  'n': document.getElementById('dir-n'),
-  'w': document.getElementById('dir-w'),
-  'center': document.getElementById('dir-center'),
-  'e': document.getElementById('dir-e'),
-  's': document.getElementById('dir-s')
-};
 
 // 操作シャッフル用DOM
 const shuffleStatusPanel = document.getElementById('shuffle-status-panel');
@@ -237,8 +224,7 @@ async function connectToio() {
     addLog("toioコアキューブに正常に接続しました！", "success");
 
     await playSound(2);
-    const defaultColor = hexToRgb(ledPicker.value);
-    await setLED(defaultColor.r, defaultColor.g, defaultColor.b);
+    await setLED(0, 195, 227); // ネオンブルー点灯
 
   } catch (error) {
     addLog(`接続に失敗しました: ${error.message}`, "error");
@@ -625,94 +611,16 @@ function getDirJapaneseName(id) {
 }
 
 // ==========================================================================
-// ランダム8方向走行ロジック (自律走行)
+// 自律走行の停止 (エラー防止用ダミー関数)
 // ==========================================================================
-btnRandomStart.addEventListener('click', () => {
-  startRandomDrive();
-});
-
-btnRandomStop.addEventListener('click', () => {
-  addLog("自動走行を停止しました。", "system");
-  stopRandomDrive();
-});
-
-function startRandomDrive() {
-  if (!isConnectedToio) return;
-  if (isRandomDriving) return;
-
-  // 自律走行開始時はシャッフル状態（発動中のタイマーなど）を一旦リセット
-  stopShuffleGimmick();
-
-  isRandomDriving = true;
-  btnRandomStart.disabled = true;
-  btnRandomStop.disabled = false;
-  
-  addLog("ランダム8方向自動走行を開始しました。(操縦入力で自動停止)", "success");
-  
-  setLED(57, 255, 20);
-  playSound(3);
-  
-  tickRandomDrive();
-}
-
 function stopRandomDrive(reason = null) {
-  if (!isRandomDriving) return;
-
-  isRandomDriving = false;
-  btnRandomStart.disabled = false;
-  btnRandomStop.disabled = true;
-
-  if (randomDriveTimer) {
-    clearTimeout(randomDriveTimer);
-    randomDriveTimer = null;
-  }
-
-  clearActiveDirectionUI();
-  controlMotors(0, 1, 0, 1);
-
-  if (reason) {
-    addLog(`【割り込み】${reason}を検知したため、自動走行を解除しました。`, "system");
-    playSound(1);
-  }
-}
-
-function clearActiveDirectionUI() {
-  Object.keys(directionElements).forEach(key => {
-    directionElements[key].classList.remove('active');
-  });
-}
-
-function tickRandomDrive() {
-  if (!isRandomDriving || !isConnectedToio) return;
-
-  if (!isToioOnMat) {
-    clearActiveDirectionUI();
-    directionElements['center'].classList.add('active');
-    controlMotors(0, 1, 0, 1);
-  } else {
-    const nextDir = RANDOM_DIRECTIONS[Math.floor(Math.random() * RANDOM_DIRECTIONS.length)];
-    
-    clearActiveDirectionUI();
-    if (directionElements[nextDir.id]) {
-      directionElements[nextDir.id].classList.add('active');
-    }
-    
-    addLog(`自動走行 - 動作変更: ${nextDir.name}`, "system");
-    
-    controlMotors(nextDir.leftSpeed, nextDir.leftDir, nextDir.rightSpeed, nextDir.rightDir);
-    
-    if (nextDir.id !== 'center') {
-      const r = Math.floor(Math.random() * 256);
-      const g = Math.floor(Math.random() * 256);
-      const b = Math.floor(Math.random() * 256);
-      setLED(r, g, b);
-    } else {
-      setLED(255, 0, 0);
+  if (isRandomDriving) {
+    isRandomDriving = false;
+    if (randomDriveTimer) {
+      clearTimeout(randomDriveTimer);
+      randomDriveTimer = null;
     }
   }
-
-  const nextDuration = 1000 + Math.random() * 1200;
-  randomDriveTimer = setTimeout(tickRandomDrive, nextDuration);
 }
 
 // ==========================================================================
@@ -799,31 +707,7 @@ async function playSound(soundId, volume = 255) {
   }
 }
 
-ledPicker.addEventListener('input', (e) => {
-  if (isRandomDriving) stopRandomDrive("LED操作");
-  const rgb = hexToRgb(e.target.value);
-  setLED(rgb.r, rgb.g, rgb.b);
-});
 
-document.querySelectorAll('.color-preset').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    if (isRandomDriving) stopRandomDrive("プリセットカラー操作");
-    const hex = e.target.dataset.color;
-    ledPicker.value = hex;
-    const rgb = hexToRgb(hex);
-    setLED(rgb.r, rgb.g, rgb.b);
-    addLog(`LEDカラーを変更しました: ${hex}`, "system");
-  });
-});
-
-document.querySelectorAll('[data-sound]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    if (isRandomDriving) stopRandomDrive("効果音操作");
-    const soundId = parseInt(e.currentTarget.dataset.sound, 10);
-    playSound(soundId);
-    addLog(`効果音を送信しました: ID ${soundId}`, "system");
-  });
-});
 
 // ==========================================================================
 // Web Gamepad API 制御ロジック

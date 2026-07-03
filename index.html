@@ -130,65 +130,6 @@
         </div>
 
         <div class="control-group disabled-until-connected" id="toio-controls">
-          <h3>クイックアクション</h3>
-          <!-- LED点灯テスト -->
-          <div class="sub-group">
-            <label for="led-picker">LED カラー設定</label>
-            <div class="led-control-row">
-              <input type="color" id="led-picker" value="#00ffcc">
-              <div class="color-preset-container">
-                <button class="color-preset" style="background-color: #ff0055;" data-color="#ff0055" title="ネオンレッド"></button>
-                <button class="color-preset" style="background-color: #00c3e3;" data-color="#00c3e3" title="ネオンブルー"></button>
-                <button class="color-preset" style="background-color: #39ff14;" data-color="#39ff14" title="ネオングリーン"></button>
-                <button class="color-preset" style="background-color: #ff00ff;" data-color="#ff00ff" title="ネオンマゼンタ"></button>
-              </div>
-            </div>
-          </div>
-
-          <!-- サウンドテスト -->
-          <div class="sub-group">
-            <label>効果音を鳴らす</label>
-            <div class="sound-grid">
-              <button class="btn btn-secondary btn-sm" id="btn-sound-up" data-sound="2">
-                <i data-lucide="volume-2"></i> 接続音
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-sound-level" data-sound="3">
-                <i data-lucide="volume-2"></i> レベルアップ
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-sound-coin" data-sound="9">
-                <i data-lucide="volume-2"></i> コイン音
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-sound-hit" data-sound="1">
-                <i data-lucide="volume-2"></i> ダメージ音
-              </button>
-            </div>
-          </div>
-
-          <!-- ランダム8方向走行 -->
-          <div class="sub-group">
-            <label>ランダム8方向走行 (自律デモ)</label>
-            <div class="random-drive-row">
-              <button class="btn btn-secondary btn-sm" id="btn-random-start">
-                <i data-lucide="play"></i> 開始
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-random-stop" disabled>
-                <i data-lucide="square"></i> 停止
-              </button>
-            </div>
-            <!-- 5方向（十字＋回転）インジケーター -->
-            <div class="direction-container">
-              <div class="dir-empty"></div>
-              <div class="dir-arrow N" id="dir-n" title="前進">↑</div>
-              <div class="dir-empty"></div>
-              <div class="dir-arrow W" id="dir-w" title="左回転">↺</div>
-              <div class="dir-arrow-center" id="dir-center" title="一時停止">●</div>
-              <div class="dir-arrow E" id="dir-e" title="右回転">↻</div>
-              <div class="dir-empty"></div>
-              <div class="dir-arrow S" id="dir-s" title="後退">↓</div>
-              <div class="dir-empty"></div>
-            </div>
-          </div>
-
           <!-- 操作シャッフルギミック -->
           <div class="sub-group">
             <label>操作シャッフルギミック (パニックトラップ)</label>
