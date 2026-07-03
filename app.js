@@ -74,7 +74,7 @@ let cooldownTimer = null;          // 自動復旧用タイマー
 let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピング
 
 // プレイヤー情報
-let playerName = localStorage.getItem('toio_player_name') || 'プレイヤー1';
+let playerName = localStorage.getItem('toio_player_name') || '';
 let taBestPlayer = localStorage.getItem('toio_ta_best_player') || '';
 let activePlayerName = ''; // タイムアタック開始時に確定したプレイヤー名
 
@@ -422,12 +422,23 @@ playerNameInput.addEventListener('input', (e) => {
  */
 function checkPlayerNameDuplicate() {
   const name = playerNameInput.value.trim();
-  if (!name) return false;
+  
+  // 1) 未入力チェック
+  if (!name) {
+    playerNameError.textContent = "プレイヤー名を入力してください";
+    playerNameError.classList.remove('hidden');
+    playerNameInput.classList.add('input-error');
+    if (taState === 'ready') {
+      updateTaUI();
+    }
+    return true; // エラーとしてブロックする
+  }
 
-  // ランキング上位10名（現在リーダーボードに載っているプレイヤー）の中に重複があるかチェック
+  // 2) 重複チェック（上位10名に限定）
   const isDuplicate = taRanking.slice(0, 10).some(item => item.name.toLowerCase() === name.toLowerCase());
   
   if (isDuplicate) {
+    playerNameError.textContent = "この名前はすでにランキングに存在します";
     playerNameError.classList.remove('hidden');
     playerNameInput.classList.add('input-error');
   } else {
@@ -702,6 +713,34 @@ async function playSound(soundId, volume = 255) {
     await soundCharacteristic.writeValue(data);
   } catch (err) {
     addLog(`サウンドコマンド送信エラー: ${err.message}`, "error");
+  }
+}
+
+/**
+ * スタート時の長いファンファーレ（ソ・ド・ミ・ソーーー）を再生する
+ */
+async function playStartFanfare() {
+  if (!soundCharacteristic || !isConnectedToio) return;
+
+  // 制御タイプ: 0x03 (MIDI/ブザー制御)
+  // 繰り返し回数: 1回
+  // 音の数: 4つ
+  // 各音: 1) 音符の長さ(10ms単位), 2) 音階(MIDI番号), 3) 音量(0-255)
+  const data = new Uint8Array([
+    0x03, // 制御タイプ
+    0x01, // 繰り返し回数
+    0x04, // 音符の数
+    
+    12, 79, 255, // ソ (120ms, G5)
+    12, 84, 255, // ド (120ms, C6)
+    12, 88, 255, // ミ (120ms, E6)
+    40, 91, 255  // ソー (400ms, G6)
+  ]);
+
+  try {
+    await soundCharacteristic.writeValue(data);
+  } catch (err) {
+    addLog(`ファンファーレ送信エラー: ${err.message}`, "error");
   }
 }
 
@@ -1161,15 +1200,20 @@ function setupTimeAttack() {
 function startCountdown() {
   if (taState !== 'ready') return;
 
-  // プレイヤー名の重複チェックガード
+  // プレイヤー名の入力＆重複チェックガード
   if (checkPlayerNameDuplicate()) {
-    addLog("⚠️ このプレイヤー名はすでにランキングに登録されています。別の名前を入力してください。", "error");
+    const name = playerNameInput.value.trim();
+    if (!name) {
+      addLog("⚠️ プレイヤー名が未入力です。名前を入力してからスタートしてください。", "error");
+    } else {
+      addLog("⚠️ このプレイヤー名はすでにランキングに登録されています。別の名前を入力してください。", "error");
+    }
     playSound(1); // 警告音
     return;
   }
 
   // 走行用のプレイヤー名を現在の入力値で確定・ロックする
-  activePlayerName = playerNameInput.value.trim() || 'プレイヤー1';
+  activePlayerName = playerNameInput.value.trim();
 
   taState = 'countdown';
   taCountdownVal = 3;
@@ -1195,7 +1239,7 @@ function tickCountdown() {
   } else {
     // GO!
     countdownNumber.textContent = "GO!";
-    playSound(3); // ファンファーレ（レベルアップ音）
+    playStartFanfare();
     setLED(57, 255, 20, 0); // ネオングリーン
 
     startTaTimer();
@@ -1251,14 +1295,20 @@ function updateTaUI() {
   if (taState === 'idle') {
     taStatus.textContent = "READY - スタート位置 \"→\" に置いてください";
   } else if (taState === 'ready') {
-    // プレイヤー名の重複を判定（上位10名に限定）
-    const isDuplicate = taRanking.slice(0, 10).some(item => item.name.toLowerCase() === playerNameInput.value.trim().toLowerCase());
-    if (isDuplicate) {
-      taStatus.textContent = "警告：プレイヤー名がランキングと重複しています";
+    const name = playerNameInput.value.trim();
+    if (!name) {
+      taStatus.textContent = "警告：プレイヤー名を入力してください";
       taStatus.className = "ta-status-label countdown"; // 赤字警告
     } else {
-      taStatus.textContent = "準備完了 - L＋R 同時押しでスタート！";
-      taStatus.classList.add('ready');
+      // プレイヤー名の重複を判定（上位10名に限定）
+      const isDuplicate = taRanking.slice(0, 10).some(item => item.name.toLowerCase() === name.toLowerCase());
+      if (isDuplicate) {
+        taStatus.textContent = "警告：プレイヤー名がランキングと重複しています";
+        taStatus.className = "ta-status-label countdown"; // 赤字警告
+      } else {
+        taStatus.textContent = "準備完了 - L＋R 同時押しでスタート！";
+        taStatus.classList.add('ready');
+      }
     }
   } else if (taState === 'countdown') {
     taStatus.textContent = "カウントダウン中...";
