@@ -926,8 +926,8 @@ function handleGamepadInput(gp) {
       if (currentMapping.e === 'n') act_n += in_e; else if (currentMapping.e === 's') act_s += in_e; else if (currentMapping.e === 'e') act_e += in_e; else if (currentMapping.e === 'w') act_w += in_e;
       if (currentMapping.w === 'n') act_n += in_w; else if (currentMapping.w === 's') act_s += in_w; else if (currentMapping.w === 'e') act_e += in_w; else if (currentMapping.w === 'w') act_w += in_w;
 
-      let leftMotor = act_n - act_s + act_e - act_w;
-      let rightMotor = act_n - act_s - act_e + act_w;
+      let leftMotor = act_n - act_s + (act_e - act_w) * 0.5;
+      let rightMotor = act_n - act_s - (act_e - act_w) * 0.5;
 
       leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
       rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
@@ -1070,8 +1070,8 @@ function processKeyboardDrive() {
     if (currentMapping.e === 'n') act_n += right; else if (currentMapping.e === 's') act_s += right; else if (currentMapping.e === 'e') act_e += right; else if (currentMapping.e === 'w') act_w += right;
     if (currentMapping.w === 'n') act_n += left; else if (currentMapping.w === 's') act_s += left; else if (currentMapping.w === 'e') act_e += left; else if (currentMapping.w === 'w') act_w += left;
 
-    let leftMotor = act_n - act_s + act_e - act_w;
-    let rightMotor = act_n - act_s - act_e + act_w;
+    let leftMotor = act_n - act_s + (act_e - act_w) * 0.5;
+    let rightMotor = act_n - act_s - (act_e - act_w) * 0.5;
 
     leftMotor = Math.max(-1.0, Math.min(1.0, leftMotor));
     rightMotor = Math.max(-1.0, Math.min(1.0, rightMotor));
