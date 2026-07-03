@@ -77,6 +77,7 @@ let currentMapping = { n: 'n', s: 's', e: 'e', w: 'w' }; // 通常のマッピ�
 let playerName = localStorage.getItem('toio_player_name') || '';
 let taBestPlayer = localStorage.getItem('toio_ta_best_player') || '';
 let activePlayerName = ''; // タイムアタック開始時に確定したプレイヤー名
+let tempRecordItem = null; // ゴール時の一時保存用データ
 
 let taRanking = []; // ランキング配列
 try {
@@ -164,6 +165,7 @@ const resultTimeVal = document.getElementById('result-time-val');
 const resultRankVal = document.getElementById('result-rank-val');
 const resultRecordMsg = document.getElementById('result-record-msg');
 const btnCloseResult = document.getElementById('btn-close-result');
+const btnSaveRanking = document.getElementById('btn-save-ranking');
 
 // ==========================================================================
 // ログ出力用ユーティリティ
@@ -1340,49 +1342,28 @@ function finishTimeAttack() {
 
   resultTimeVal.textContent = timeStr;
 
-  // タイムをランキングに登録
-  const newRecordItem = {
+  // タイムアタック一時記録オブジェクトの作成
+  tempRecordItem = {
     name: activePlayerName,
     time: taElapsedTime,
     date: new Date().toLocaleDateString('ja-JP')
   };
-  taRanking.push(newRecordItem);
-  taRanking.sort((a, b) => a.time - b.time); // 昇順ソート
-  
-  // 総合順位の算出
-  const currentRank = taRanking.indexOf(newRecordItem) + 1;
-  resultRankVal.textContent = `総合 ${currentRank} 位`;
-  
-  addLog(`🎉 ゴール！ 総合順位: ${currentRank}位 / タイム: ${timeStr} (by ${activePlayerName})`, "success");
 
-  // メモリ肥大化防止のため最大100件まで保持
-  if (taRanking.length > 100) {
-    taRanking = taRanking.slice(0, 100);
-  }
-  
-  localStorage.setItem('toio_ta_ranking', JSON.stringify(taRanking));
-  updateRankingUI(); // ランキング表示を更新
+  // もしこのタイムをランキングに保存した場合の仮想順位を算出
+  const tempRanking = [...taRanking, tempRecordItem];
+  tempRanking.sort((a, b) => a.time - b.time);
+  const virtualRank = tempRanking.indexOf(tempRecordItem) + 1;
+  resultRankVal.textContent = `登録時の想定順位: 総合 ${virtualRank} 位`;
 
+  // 自己ベストの更新可否見込みメッセージ
   const isNewRecord = (taBestTime === null || taElapsedTime < taBestTime);
 
   if (isNewRecord) {
-    taBestTime = taElapsedTime;
-    taBestPlayer = activePlayerName;
-    localStorage.setItem('toio_ta_best', taBestTime);
-    localStorage.setItem('toio_ta_best_player', taBestPlayer);
-    
-    taBest.textContent = formatTime(taBestTime);
-    taBestPlayerDisplay.textContent = `by ${taBestPlayer}`;
-    addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)} (by ${taBestPlayer})`, "success");
-    
-    resultRecordMsg.textContent = `🏆 NEW RECORD! (by ${taBestPlayer}) 🏆`;
+    resultRecordMsg.textContent = `🏆 自己ベスト更新チャンス！ 🏆`;
     resultRecordMsg.style.color = "var(--neon-green)";
     resultRecordMsg.style.textShadow = "0 0 10px rgba(57, 255, 20, 0.6)";
-
-    // ベスト更新フラッシュ効果（LED）
-    flashLED(0, 195, 227, 3);
   } else {
-    resultRecordMsg.textContent = `BEST TIME: ${formatTime(taBestTime)} (by ${taBestPlayer || '不明'})`;
+    resultRecordMsg.textContent = `BEST TIME: ${formatTime(taBestTime)} (by ${taBestPlayer || 'なし'})`;
     resultRecordMsg.style.color = "var(--neon-yellow)";
     resultRecordMsg.style.textShadow = "0 0 10px rgba(255, 230, 0, 0.4)";
   }
@@ -1427,8 +1408,53 @@ async function flashLED(r, g, b, count) {
   await setLED(r, g, b, 0);
 }
 
-// 結果オーバーレイ閉じるイベント
+// ランキング登録保存イベント
+btnSaveRanking.addEventListener('click', () => {
+  if (!tempRecordItem) return;
+
+  // メインのランキング配列に追加
+  taRanking.push(tempRecordItem);
+  taRanking.sort((a, b) => a.time - b.time); // 昇順ソート
+
+  // 実際の順位
+  const currentRank = taRanking.indexOf(tempRecordItem) + 1;
+  addLog(`🎉 ランキングに登録しました！ 総合 ${currentRank}位 / タイム: ${formatTime(tempRecordItem.time)} (by ${tempRecordItem.name})`, "success");
+
+  // 最大100件まで保持
+  if (taRanking.length > 100) {
+    taRanking = taRanking.slice(0, 100);
+  }
+
+  localStorage.setItem('toio_ta_ranking', JSON.stringify(taRanking));
+  updateRankingUI();
+
+  // 自己ベストの更新判定
+  const isNewRecord = (taBestTime === null || tempRecordItem.time < taBestTime);
+  if (isNewRecord) {
+    taBestTime = tempRecordItem.time;
+    taBestPlayer = tempRecordItem.name;
+    localStorage.setItem('toio_ta_best', taBestTime);
+    localStorage.setItem('toio_ta_best_player', taBestPlayer);
+    
+    taBest.textContent = formatTime(taBestTime);
+    taBestPlayerDisplay.textContent = `by ${taBestPlayer}`;
+    addLog(`🏆 新記録達成！ベストタイム更新: ${formatTime(taBestTime)} (by ${taBestPlayer})`, "success");
+    
+    // ベスト更新フラッシュ効果（LED）
+    flashLED(0, 195, 227, 3);
+  }
+
+  tempRecordItem = null;
+  resultOverlay.classList.add('hidden');
+  checkPlayerNameDuplicate(); // 必要なら同名重複の再警告を出す
+});
+
+// 結果オーバーレイ閉じるイベント (登録せずに終了)
 btnCloseResult.addEventListener('click', () => {
+  if (tempRecordItem) {
+    addLog(`ℹ️ タイムアタック記録を保存せずに終了しました。(タイム: ${formatTime(tempRecordItem.time)})`, "system");
+  }
+  tempRecordItem = null;
   resultOverlay.classList.add('hidden');
 });
 
