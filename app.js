@@ -558,7 +558,7 @@ function updateLapsUI() {
     
     const labelSpan = document.createElement('span');
     labelSpan.className = 'lap-label';
-    labelSpan.textContent = `LAP ${idx + 1} (${lap.card})`;
+    labelSpan.textContent = `LAP ${idx + 1}`;
     
     const timeSpan = document.createElement('span');
     timeSpan.className = 'lap-time';
