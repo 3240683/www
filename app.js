@@ -778,6 +778,37 @@ async function playStartFanfare() {
   }
 }
 
+/**
+ * ゴール時の豪華なファンファーレ（ド・ミ・ソ・ド・ミ・ソー・ファー・ソー！）を再生する
+ */
+async function playGoalFanfare() {
+  if (!soundCharacteristic || !isConnectedToio) return;
+
+  // 制御タイプ: 0x03 (MIDI/ブザー制御)
+  // 繰り返し回数: 1回
+  // 音の数: 8つ
+  const data = new Uint8Array([
+    0x03, // 制御タイプ
+    0x01, // 繰り返し回数
+    0x08, // 音符の数
+    
+    12, 84, 255,  // ド (120ms, C6)
+    12, 88, 255,  // ミ (120ms, E6)
+    12, 91, 255,  // ソ (120ms, G6)
+    12, 96, 255,  // ド (120ms, C7)
+    12, 100, 255, // ミ (120ms, E7)
+    24, 103, 255, // ソーー (240ms, G7)
+    24, 101, 255, // ファーー (240ms, F7)
+    48, 103, 255  // ソーーー！ (480ms, G7)
+  ]);
+
+  try {
+    await soundCharacteristic.writeValue(data);
+  } catch (err) {
+    addLog(`ゴールファンファーレ送信エラー: ${err.message}`, "error");
+  }
+}
+
 
 
 // ==========================================================================
@@ -1370,7 +1401,7 @@ function finishTimeAttack() {
   }
 
   const timeStr = formatTime(taElapsedTime);
-  playSound(9); // コイン音（ゴールファンファーレ）
+  playGoalFanfare(); // 華やかなゴールファンファーレ
   setLED(0, 195, 227, 0); // 青点灯
 
   resultTimeVal.textContent = timeStr;
