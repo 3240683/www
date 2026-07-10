@@ -35,9 +35,9 @@
             <div class="guide-section-block">
               <h4 class="neon-sub-text" style="color: var(--neon-green); display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="flag" style="width: 16px; height: 16px;"></i> あそびかたの流れ</h4>
               <ol class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.6; color: var(--text-secondary); margin-bottom: 0.75rem;">
-                <li><strong>① toioとコントローラーを接続</strong>（下の「toioに接続する」「コントローラー」欄を参照）</li>
-                <li><strong>② toioを「→」の位置に置く</strong></li>
-                <li><strong>③ L＋R同時押しでスタート！</strong> 迷路を進んでゴールを目指そう</li>
+                <li><strong>toioとコントローラーを接続</strong>（下の「toioに接続する」「コントローラー」欄を参照）</li>
+                <li><strong>toioを「→」の位置に置く</strong></li>
+                <li><strong>L＋R同時押しでスタート！</strong> 迷路を進んでゴールを目指そう</li>
               </ol>
             </div>
 
@@ -75,7 +75,7 @@
             <div class="guide-section-block">
               <h4 class="neon-sub-text" style="color: var(--neon-red); display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.4rem;"><i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i> 注意：操作シャッフルギミック</h4>
               <ul class="rule-list" style="padding-left: 1.25rem; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.75rem;">
-                <li>マットに入る、または「！」「？」カードを通過すると <strong>10秒間、前後左右の操作が入れ替わります</strong></li>
+                <li>マットに入る、または「！」「？」カードを通過すると <strong>10秒間、前後左右の操作が完全ランダムに入れ替わります</strong></li>
                 <li>タイムアタック中に「！」「？」を通過すると、自動でラップタイムが記録されます</li>
               </ul>
             </div>
@@ -197,7 +197,7 @@
         <div class="control-group disabled-until-connected" id="toio-controls">
           <!-- 操作シャッフルギミック -->
           <div class="sub-group">
-            <label>操作シャッフルギミック (パニックトラップ)</label>
+            <label>操作シャッフルギミック</label>
             <!-- シャッフル状態表示パネル -->
             <div class="shuffle-status-panel normal" id="shuffle-status-panel" style="margin-top: 0.5rem;">
               <i data-lucide="shield-check" id="shuffle-icon"></i>
@@ -224,7 +224,7 @@
 
         <div class="controller-info" id="pad-info-box">
           <p class="info-placeholder" id="pad-placeholder">
-            PCにコントローラーをペアリングし、いずれかのボタンを押してください。ブラウザが自動的に検知します。
+            PCにコントローラーを有線接続・ペアリングし、いずれかのボタンを押してください。ブラウザが自動的に検知します。
           </p>
           <div class="controller-details hidden" id="pad-details">
             <span class="controller-name" id="pad-name">Nintendo Switch Pro Controller</span>
