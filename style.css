@@ -447,12 +447,12 @@ body {
     ".    btnX ."
     "btnY .    btnA"
     ".    btnB .";
-  gap: 6px;
+  gap: 4px;
   background: #e2e8f0;
-  padding: 8px;
+  padding: 6px;
   border-radius: 50%;
-  width: 90px;
-  height: 90px;
+  width: 100px;
+  height: 100px;
   align-items: center;
   justify-items: center;
 }
@@ -463,13 +463,13 @@ body {
 #btn-a { grid-area: btnA; }
 
 .btn-node {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background-color: #f1f5f9;
   border: 1px solid #cbd5e1;
   color: #475569;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   font-weight: 800;
   display: flex;
   justify-content: center;
