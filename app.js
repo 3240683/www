@@ -1030,15 +1030,15 @@ function toggleBtnClass(elementId, isPressed) {
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
 
-  if (e.key in keysPressed || e.key === 'w' || e.key === 's' || e.key === 'a' || e.key === 'd') {
+  if (e.key === 'w' || e.key === 's' || e.key === 'a' || e.key === 'd') {
     if (isRandomDriving) {
       stopRandomDrive("キーボード操作");
     }
     keysPressed[e.key] = true;
 
-    // タイムアタック：上(W/↑)と下(S/↓)の同時押し検知
-    const isUpPressed = keysPressed.w || keysPressed.ArrowUp;
-    const isDownPressed = keysPressed.s || keysPressed.ArrowDown;
+    // タイムアタック：上(W)と下(S)の同時押し検知
+    const isUpPressed = keysPressed.w;
+    const isDownPressed = keysPressed.s;
     if (isUpPressed && isDownPressed && taState === 'ready') {
       startCountdown();
     }
@@ -1062,7 +1062,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
-  if (e.key in keysPressed || e.key === 'w' || e.key === 's' || e.key === 'a' || e.key === 'd') {
+  if (e.key === 'w' || e.key === 's' || e.key === 'a' || e.key === 'd') {
     keysPressed[e.key] = false;
     processKeyboardDrive();
   }
@@ -1070,8 +1070,7 @@ window.addEventListener('keyup', (e) => {
 
 function isKeyboardControlling() {
   return (
-    keysPressed.w || keysPressed.s || keysPressed.a || keysPressed.d ||
-    keysPressed.ArrowUp || keysPressed.ArrowDown || keysPressed.ArrowLeft || keysPressed.ArrowRight
+    keysPressed.w || keysPressed.s || keysPressed.a || keysPressed.d
   );
 }
 
@@ -1092,10 +1091,10 @@ function processKeyboardDrive() {
   let rightDir = 1;
 
   if (!isTaLocked) {
-    const fwd = keysPressed.w || keysPressed.ArrowUp ? 1.0 : 0.0;
-    const bwd = keysPressed.s || keysPressed.ArrowDown ? 1.0 : 0.0;
-    const left = keysPressed.a || keysPressed.ArrowLeft ? 1.0 : 0.0;
-    const right = keysPressed.d || keysPressed.ArrowRight ? 1.0 : 0.0;
+    const fwd = keysPressed.w ? 1.0 : 0.0;
+    const bwd = keysPressed.s ? 1.0 : 0.0;
+    const left = keysPressed.a ? 1.0 : 0.0;
+    const right = keysPressed.d ? 1.0 : 0.0;
 
     let act_n = 0, act_s = 0, act_e = 0, act_w = 0;
     
@@ -1226,7 +1225,7 @@ function setupTimeAttack() {
   checkPlayerNameDuplicate();
   
   addLog("🏁 スタート位置 [→] を検出：操作初期化＆タイマーをリセットしました。", "success");
-  addLog("👉 コントローラーの「L＋R」同時押し（キーボードはW＋S / ↑＋↓）でスタート！", "system");
+  addLog("👉 コントローラーの「L＋R」同時押し（キーボードはW＋S）でスタート！", "system");
   
   playSound(2); // 接続音
   setLED(255, 230, 0, 0); // ネオンイエロー点灯
