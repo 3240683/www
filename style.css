@@ -1213,6 +1213,7 @@ input:checked + .slider:before {
 .ranking-container {
   max-height: 500px;
   overflow-y: auto;
+　overflow-x: hidden; 
 }
 
 .ranking-list {
@@ -1273,7 +1274,7 @@ input:checked + .slider:before {
 }
 
 .ranking-item:hover {
-  transform: translateX(-4px);
+  transform: translateX(4px);
   background: #f1f5f9;
 }
 
