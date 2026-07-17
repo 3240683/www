@@ -164,6 +164,7 @@ const resultOverlay = document.getElementById('result-overlay');
 const resultTimeVal = document.getElementById('result-time-val');
 const resultRankVal = document.getElementById('result-rank-val');
 const resultRecordMsg = document.getElementById('result-record-msg');
+const resultRankingFullMsg = document.getElementById('result-ranking-full-msg');
 const btnCloseResult = document.getElementById('btn-close-result');
 const btnSaveRanking = document.getElementById('btn-save-ranking');
 
@@ -1431,7 +1432,16 @@ function finishTimeAttack() {
     resultRecordMsg.style.color = "var(--neon-yellow)";
     resultRecordMsg.style.textShadow = "0 0 10px rgba(255, 230, 0, 0.4)";
   }
+// ランキングが先着10名に達している場合は、登録ボタンを非表示にする
+  if (taRanking.length >= 10) {
+    btnSaveRanking.classList.add('hidden');
+    resultRankingFullMsg.classList.remove('hidden');
+  } else {
+    btnSaveRanking.classList.remove('hidden');
+    resultRankingFullMsg.classList.add('hidden');
+  }
 
+  resultOverlay.classList.remove('hidden');
   resultOverlay.classList.remove('hidden');
   
   // ゴールした瞬間にtoioを完全停止
