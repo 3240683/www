@@ -156,6 +156,9 @@ const playerNameInput = document.getElementById('player-name-input');
 const playerNameError = document.getElementById('player-name-error');
 const taLapsList = document.getElementById('ta-laps-list');
 const taRankingList = document.getElementById('ta-ranking-list');
+const rankingSearchInput = document.getElementById('ranking-search-input');
+const btnRankingSearch = document.getElementById('btn-ranking-search');
+const rankingSearchResult = document.getElementById('ranking-search-result');
 const btnResetBest = document.getElementById('btn-reset-best');
 const btnResetRanking = document.getElementById('btn-reset-ranking');
 const countdownOverlay = document.getElementById('countdown-overlay');
@@ -453,6 +456,44 @@ function checkPlayerNameDuplicate() {
   if (taState === 'ready') {
     updateTaUI();
   }
+  return isDuplicate;
+}
+
+// プレイヤー名でランキングを検索し、順位とタイムを表示する
+function searchRankingByPlayer() {
+  const query = rankingSearchInput.value.trim();
+
+  if (!query) {
+    rankingSearchResult.textContent = "プレイヤー名を入力してください";
+    rankingSearchResult.style.color = "var(--neon-yellow)";
+    rankingSearchResult.classList.remove('hidden');
+    return;
+  }
+
+  const index = taRanking.findIndex(item => item.name.toLowerCase() === query.toLowerCase());
+
+  if (index === -1) {
+    rankingSearchResult.textContent = `「${query}」さんの記録は見つかりませんでした`;
+    rankingSearchResult.style.color = "var(--neon-red)";
+  } else {
+    const item = taRanking[index];
+    const rank = index + 1;
+    rankingSearchResult.textContent = `「${item.name}」さん： 総合 ${rank}位 / タイム ${formatTime(item.time)}`;
+    rankingSearchResult.style.color = "var(--neon-green)";
+  }
+
+  rankingSearchResult.classList.remove('hidden');
+}
+
+btnRankingSearch.addEventListener('click', searchRankingByPlayer);
+rankingSearchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') searchRankingByPlayer();
+});
+
+/**
+ * ランキング（リーダーボード）UIの更新
+ */
+function updateRankingUI() {
   
   return isDuplicate;
 }
