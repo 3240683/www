@@ -117,8 +117,21 @@
           </div>
         </div>
 
-        <!-- ラップタイム表示 -->
+      <!-- ラップタイム表示 -->
         <div class="ta-laps-section">
+          <h3><i data-lucide="flag"></i> ラップタイム</h3>
+          <div class="laps-container">
+            <ul id="ta-laps-list" class="laps-list">
+              <li class="lap-empty">ラップタイムはありません</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ランキング（リーダーボード）表示 -->
+        <div class="ta-ranking-section">
+          <div class="section-header-flex" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.5rem; margin-bottom: 0.75rem;">
+            <h3 style="border: none; margin: 0; padding: 0;"><i data-lucide="trophy"></i> リーダーボード (TOP 10)</h3>
+            <button id="btn-reset-ranking" class="btn-clear" style="font-size: 0.75rem; color: var(--text-secondary);">ランキングクリア</button>
           </div>
 
           <!-- プレイヤー名検索 -->
@@ -134,21 +147,6 @@
           </div>
           <div id="ranking-search-result" class="error-msg hidden" style="margin-bottom: 0.75rem;"></div>
 
-          <div class="ranking-container">
-          <h3><i data-lucide="flag"></i> ラップタイム</h3>
-          <div class="laps-container">
-            <ul id="ta-laps-list" class="laps-list">
-              <li class="lap-empty">ラップタイムはありません</li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- ランキング（リーダーボード）表示 -->
-        <div class="ta-ranking-section">
-          <div class="section-header-flex" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.5rem; margin-bottom: 0.75rem;">
-            <h3 style="border: none; margin: 0; padding: 0;"><i data-lucide="trophy"></i> リーダーボード (TOP 10)</h3>
-            <button id="btn-reset-ranking" class="btn-clear" style="font-size: 0.75rem; color: var(--text-secondary);">ランキングクリア</button>
-          </div>
           <div class="ranking-container">
             <ol id="ta-ranking-list" class="ranking-list">
               <li class="ranking-empty">記録がありません</li>
