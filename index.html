@@ -119,6 +119,22 @@
 
         <!-- ラップタイム表示 -->
         <div class="ta-laps-section">
+          </div>
+
+          <!-- プレイヤー名検索 -->
+          <div class="ranking-search" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <input
+              type="text"
+              id="ranking-search-input"
+              placeholder="プレイヤー名で検索..."
+              maxlength="15"
+              style="flex: 1;"
+            >
+            <button id="btn-ranking-search" class="btn btn-secondary btn-sm" style="width: auto; padding: 0.5rem 1rem;">検索</button>
+          </div>
+          <div id="ranking-search-result" class="error-msg hidden" style="margin-bottom: 0.75rem;"></div>
+
+          <div class="ranking-container">
           <h3><i data-lucide="flag"></i> ラップタイム</h3>
           <div class="laps-container">
             <ul id="ta-laps-list" class="laps-list">
