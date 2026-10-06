@@ -289,6 +289,22 @@
   }
   .ocr-drop input{margin-top:10px;}
 
+  /* ▼▼▼ 変更: OCR行選択機能（ここから） ▼▼▼ */
+  .ocr-lines{ text-align:left; }
+  .ocr-line{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 10px; border:1px solid var(--line); border-radius:3px; background:#fff;
+    margin-bottom:6px; font-family:monospace; font-size:13px; word-break:break-all;
+  }
+  .ocr-line .txt{flex:1;}
+  .ocr-line .actions{display:flex; gap:6px; flex-shrink:0;}
+  .ocr-line .actions button{
+    font-size:11.5px; padding:4px 8px; border-radius:var(--radius-pill);
+    border:1px solid var(--line); background:var(--paper); color:var(--ink-soft);
+  }
+  .ocr-line .actions button.applied{background:var(--good); border-color:var(--good); color:#fff;}
+  /* ▲▲▲ 変更: OCR行選択機能（ここまで） ▲▲▲ */
+
   .toast{
     position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
     background:var(--ink); color:#fff; padding:11px 20px; border-radius:var(--radius-pill);
@@ -868,9 +884,12 @@ function renderExpenseTab(trip){
   <div class="card">
     <div class="section-title"><h2>実費を記録</h2></div>
     <div class="ocr-drop">
-      レシート画像をアップロードすると、端末内の画像認識（無料・オフライン対応）で金額・日付・店舗名を読み取り自動入力します（読み取り結果は必ず確認してください）<br>
+      <!-- 変更: 案内文を「行を選んで反映」の説明に変更 -->
+      レシート画像をアップロードすると、端末内の画像認識（無料・オフライン対応）でテキストを読み取ります。読み取った行の中から、金額・日付として使いたい行をクリックして反映してください（自動判定した結果も入りますが、必ず確認・修正してください）。<br>
       <input type="file" id="ocr-file" accept="image/*">
       <div id="ocr-status" class="muted" style="margin-top:6px;"></div>
+      <!-- 追加: 読み取った行の一覧がここに表示される -->
+      <div id="ocr-lines" style="margin-top:10px;"></div>
     </div>
     <div class="grid3">
       <div class="field"><label>費目</label><select id="ex-category">${catOptions}</select></div>
@@ -906,21 +925,30 @@ async function runReceiptOcrOffline(file, onProgress){
   const text = data.text || '';
   return parseReceiptText(text);
 }
+/* ▼▼▼ 変更: OCR行選択機能（ここから） ▼▼▼ */
+// 変更: これまでparseReceiptText内に直書きしていた金額抽出処理を、
+// 行単位でも使い回せるよう関数として切り出した
+function extractAmountFromLine(line){
+  if(!line) return null;
+  const m = line.match(/([0-9][0-9,]{1,7})/g);
+  if(!m) return null;
+  const n = Number(m[m.length-1].replace(/,/g,''));
+  return isNaN(n) ? null : n;
+}
+// 変更: 日付抽出処理も同様に関数として切り出した
+function extractDateFromLine(line){
+  if(!line) return null;
+  const m = line.match(/(20\d{2})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+  if(!m) return null;
+  return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+}
 function parseReceiptText(text){
   const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
 
   // 金額: 「合計」を含む行を優先し、そこから金額らしき数字を取る。無ければ「小計」、それも無ければ文中最大の金額。
-  let amount = null;
   const totalLine = lines.find(l=>/合\s*計/.test(l));
   const subtotalLine = lines.find(l=>/小\s*計/.test(l));
-  const amountFrom = (line)=>{
-    if(!line) return null;
-    const m = line.match(/([0-9][0-9,]{1,7})/g);
-    if(!m) return null;
-    const n = Number(m[m.length-1].replace(/,/g,''));
-    return isNaN(n) ? null : n;
-  };
-  amount = amountFrom(totalLine) || amountFrom(subtotalLine);
+  let amount = extractAmountFromLine(totalLine) || extractAmountFromLine(subtotalLine);
   if(!amount){
     const all = text.match(/[0-9][0-9,]{2,7}/g) || [];
     const nums = all.map(s=>Number(s.replace(/,/g,''))).filter(n=>!isNaN(n) && n>0 && n<1000000);
@@ -928,24 +956,60 @@ function parseReceiptText(text){
   }
 
   // 日付: 2026/09/25・2026-09-25・2026年9月25日 などの表記に対応
-  let date = null;
-  const dateMatch = text.match(/(20\d{2})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
-  if(dateMatch){
-    const y = dateMatch[1], m = String(dateMatch[2]).padStart(2,'0'), d = String(dateMatch[3]).padStart(2,'0');
-    date = `${y}-${m}-${d}`;
-  }
+  const date = extractDateFromLine(text);
 
   // 店舗名: 先頭付近の、数字だけではない行を店舗名の候補とする（簡易推定）
   const store = lines.slice(0,6).find(l=> l.length>=2 && !/^[0-9¥,.\-\s]+$/.test(l)) || null;
 
-  return { category: null, amount, date, store, memo: null, rawText: text };
+  // 変更: 戻り値に lines（読み取った行の配列）を追加。これを下の renderOcrLines に渡して一覧表示する
+  return { category: null, amount, date, store, memo: null, rawText: text, lines };
 }
+
+// 追加: 読み取った行を一覧表示し、ユーザーが行ごとに「金額」「日付」「メモ」へ反映できるようにする新機能
+function renderOcrLines(lines){
+  const container = document.getElementById('ocr-lines');
+  if(!lines || !lines.length){ container.innerHTML=''; return; }
+  container.innerHTML = `<div class="muted" style="margin-bottom:6px; text-align:left;">読み取った行（正しい行の「金額」「日付」「メモ」をクリックすると反映されます）</div>` +
+    lines.map((l,i)=>`
+      <div class="ocr-line">
+        <span class="txt">${escapeHtml(l)}</span>
+        <span class="actions">
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="amount">金額</button>
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="date">日付</button>
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="memo">メモ</button>
+        </span>
+      </div>`).join('');
+
+  container.querySelectorAll('.ocr-apply').forEach(btn=>{
+    btn.onclick = ()=>{
+      const idx = Number(btn.dataset.idx);
+      const field = btn.dataset.field;
+      const line = lines[idx];
+      if(field==='amount'){
+        const amt = extractAmountFromLine(line);
+        if(amt==null){ showToast('この行から金額を読み取れませんでした。他の行を試してください'); return; }
+        document.getElementById('ex-amount').value = amt.toLocaleString('ja-JP');
+      } else if(field==='date'){
+        const d = extractDateFromLine(line);
+        if(!d){ showToast('この行から日付を読み取れませんでした。他の行を試してください'); return; }
+        document.getElementById('ex-date').value = d;
+      } else if(field==='memo'){
+        document.getElementById('ex-memo').value = line;
+      }
+      container.querySelectorAll(`.ocr-apply[data-field="${field}"]`).forEach(b=> b.classList.remove('applied'));
+      btn.classList.add('applied');
+      showToast('反映しました');
+    };
+  });
+}
+/* ▲▲▲ 変更: OCR行選択機能（ここまで） ▲▲▲ */
 
 function bindExpenseTab(trip){
   document.getElementById('ocr-file').onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     const statusEl = document.getElementById('ocr-status');
+    document.getElementById('ocr-lines').innerHTML = ''; // 追加: 新しいファイル選択時に前回の行一覧をクリア
     try{
       statusEl.textContent = '読み取っています…（初回はライブラリのダウンロードに少し時間がかかります）';
       const result = await runReceiptOcrOffline(file, (pct)=>{ statusEl.textContent = `読み取っています…${pct}%`; });
@@ -954,7 +1018,8 @@ function bindExpenseTab(trip){
       if(result.date) document.getElementById('ex-date').value = result.date;
       const memoParts = [result.store, result.memo].filter(Boolean);
       document.getElementById('ex-memo').value = memoParts.length ? memoParts.join('　') : 'OCRで読み取り（要確認）';
-      statusEl.textContent = '読み取り完了。内容を確認してから「実費を追加」を押してください。';
+      renderOcrLines(result.lines); // 追加: 読み取った行一覧を表示
+      statusEl.textContent = '読み取り完了。自動反映された内容と、下の行一覧を見比べて、間違っていれば該当行のボタンで直接反映してください。'; // 変更: 案内文を更新
       showToast('レシートを読み取りました');
     }catch(err){
       console.error(err);
