@@ -339,25 +339,27 @@ let state = {
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
 
+// 変更: window.storage（Claudeのプレビュー専用API）は通常のブラウザ／GitHub Pagesでは使えないため、
+// どの環境でも動作するブラウザ標準の localStorage に変更。保存先はこの端末・このブラウザ内のみ。
 async function saveState(){
   try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
       profile: state.profile, trips: state.trips, roundingRotation: state.roundingRotation
-    }), false);
+    }));
   }catch(e){ console.error('保存に失敗しました', e); }
 }
 
 async function loadState(){
   try{
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if(res && res.value){
-      const data = JSON.parse(res.value);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const data = JSON.parse(raw);
       state.profile = data.profile || null;
       state.trips = data.trips || [];
       state.roundingRotation = data.roundingRotation || {};
     }
   }catch(e){
-    // キーが無い場合はエラーになるので何もしない
+    console.error('読み込みに失敗しました', e);
   }
   state.view = state.profile ? 'tripList' : 'onboarding';
   render();
