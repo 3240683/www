@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>精算｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   settlement.html: 3.6 精算画面 + 4.6 最小送金
+========================================================= */
+function renderSettlementTab(trip){
+  const totalEstimate = ESTIMATE_CATEGORIES.reduce((s,[k])=> s + (Number(trip.estimate[k])||0), 0);
+  const { balances, paid, shareMap, totalActual } = computeBalances(trip);
+  const diff = totalActual - totalEstimate;
+
+  const balanceRows = trip.members.map(m=>{
+    const bal = balances[m.id] || 0;
+    return `<tr>
+      <td>${escapeHtml(m.name)}${m.owner?'<span class="badge-owner">オーナー</span>':''}</td>
+      <td class="amount">${yen(paid[m.id]||0)}</td>
+      <td class="amount">${yen(shareMap[m.id]||0)}</td>
+      <td class="amount ${bal>=0?'pos':'neg'}">${bal>=0?'受取 '+yen(bal):'立替 '+yen(-bal)}</td>
+    </tr>`;
+  }).join('');
+
+  const transferRows = trip.settlements.map(s=>{
+    const st = settlementStatus(s);
+    const label = st==='done' ? '清算済み' : '未払い';
+    return `
+    <div class="transfer-item">
+      <div class="who">${escapeHtml(memberName(trip,s.payer))} <span class="arrow">→</span> ${escapeHtml(memberName(trip,s.receiver))} の支払い <strong>${yen(s.amount)}</strong></div>
+      <span class="status-tag ${st}">${label}</span>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div class="section-title"><h2>見積もりとの差額</h2></div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">見積額</div><div class="kpi-value">${yen(totalEstimate)}</div></div>
+      <div class="kpi"><div class="kpi-label">実費合計</div><div class="kpi-value">${yen(totalActual)}</div></div>
+      <div class="kpi"><div class="kpi-label">差額</div><div class="kpi-value" style="color:${diff>0?'var(--accent)':'var(--good)'}">${diff>=0?'+':''}${yen(diff)}</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title"><h2>収支一覧</h2><span class="muted">精算単位：${trip.roundingUnit}円 ／ 端数負担：${roundingMethodLabel(trip.roundingMethod)}</span></div>
+    <table class="data-table">
+      <thead><tr><th>参加者</th><th>支払った額</th><th>分担額</th><th>収支</th></tr></thead>
+      <tbody>${balanceRows}</tbody>
+    </table>
+    <div class="btn-row"><button class="btn accent" id="btn-calc-settlement">最小送金で精算を計算</button></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><h2>精算結果（送金回数が最小になるよう計算）</h2></div>
+    ${trip.settlements.length ? transferRows : '<p class="muted">「最小送金で精算を計算」を押すと結果が表示されます。</p>'}
+  </div>`;
+}
+function bindSettlementTab(trip){
+  document.getElementById('btn-calc-settlement').onclick = ()=>{
+    ensureSettlements(trip);
+    rerenderPage(); showToast('精算結果を計算しました');
+  };
+}
+
+initTripPage('settlement.html', renderSettlementTab, bindSettlementTab);
+</script>
+</body>
+</html>

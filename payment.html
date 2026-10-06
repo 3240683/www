@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>支払い管理｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   payment.html: 3.7 支払い管理画面（4.7 双方確認による精算完了）
+========================================================= */
+function renderPaymentTab(trip){
+  if(!trip.settlements.length){
+    return `<div class="card"><p class="muted">まだ精算結果がありません。「精算」タブで計算してください。</p></div>`;
+  }
+  const rows = trip.settlements.map(s=>{
+    const st = settlementStatus(s);
+    const label = st==='done' ? '清算済み' : '未払い';
+    const payerName = escapeHtml(memberName(trip,s.payer));
+    const receiverName = escapeHtml(memberName(trip,s.receiver));
+    return `
+    <div class="transfer-item" style="flex-direction:column; align-items:stretch; gap:10px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div class="who">${payerName} <span class="arrow">→</span> ${receiverName} の支払い <strong>${yen(s.amount)}</strong></div>
+        <span class="status-tag ${st}">${label}</span>
+      </div>
+      <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--ink-soft);">
+        <div>
+          送金人（${payerName}）：${s.paymentCompleted ? '支払い済みと回答' : '未回答'}
+          <button class="btn ghost sm btn-toggle-pay" data-id="${s.id}">${s.paymentCompleted ? '回答を修正' : '回答する'}</button>
+        </div>
+        <div>
+          受取人（${receiverName}）：${s.receiptConfirmed ? '受け取り済みと回答' : '未回答'}
+          <button class="btn ghost sm btn-toggle-receive" data-id="${s.id}">${s.receiptConfirmed ? '回答を修正' : '回答する'}</button>
+        </div>
+      </div>
+      ${st==='done' && s.completedAt ? `<div class="muted">清算済み日時：${s.completedAt}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div class="section-title"><h2>支払い管理</h2><span class="muted">送金人・受取人の双方が「はい」と回答すると清算済みになります</span></div>
+    ${rows}
+  </div>`;
+}
+function bindPaymentTab(trip){
+  function afterAnswer(s){
+    if(s.paymentCompleted && s.receiptConfirmed){
+      s.completedAt = new Date().toLocaleString('ja-JP');
+      showToast('精算が完了しました。');
+    } else {
+      s.completedAt = null;
+      showToast('回答を更新しました。');
+    }
+    rerenderPage();
+  }
+  document.querySelectorAll('.btn-toggle-pay').forEach(el=>{
+    el.onclick = ()=>{
+      const s = trip.settlements.find(x=>x.id===el.dataset.id);
+      const receiverName = memberName(trip, s.receiver);
+      openYesNoModal(`${receiverName}さんに代金を支払いましたか？`,
+        ()=>{ s.paymentCompleted = true; afterAnswer(s); },
+        ()=>{ s.paymentCompleted = false; afterAnswer(s); }
+      );
+    };
+  });
+  document.querySelectorAll('.btn-toggle-receive').forEach(el=>{
+    el.onclick = ()=>{
+      const s = trip.settlements.find(x=>x.id===el.dataset.id);
+      const payerName = memberName(trip, s.payer);
+      openYesNoModal(`${payerName}さんから代金を受け取りましたか？`,
+        ()=>{ s.receiptConfirmed = true; afterAnswer(s); },
+        ()=>{ s.receiptConfirmed = false; afterAnswer(s); }
+      );
+    };
+  });
+}
+
+initTripPage('payment.html', renderPaymentTab, bindPaymentTab);
+</script>
+</body>
+</html>

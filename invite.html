@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>招待｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   invite.html: 3.9 招待画面
+========================================================= */
+function renderInviteTab(trip){
+  const invite = trip.invite;
+  return `
+  <div class="card">
+    <div class="section-title"><h2>招待</h2></div>
+    ${invite ? `
+      <div class="invite-box" id="invite-url">${invite.url}</div>
+      <p class="muted">有効期限：${invite.expiry} ／ 利用回数：残り ${invite.remaining} 回</p>
+      <div class="btn-row">
+        <button class="btn secondary" id="btn-copy-invite">コピー</button>
+        <button class="btn ghost" id="btn-reissue-invite">URLを再発行</button>
+      </div>
+    ` : `
+      <p class="muted">招待URLを発行して、旅行の参加者に共有しましょう。</p>
+      <div class="btn-row"><button class="btn accent" id="btn-issue-invite">URL発行</button></div>
+    `}
+  </div>`;
+}
+function bindInviteTab(trip){
+  const issueBtn = document.getElementById('btn-issue-invite');
+  if(issueBtn) issueBtn.onclick = ()=>{
+    const token = Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10);
+    const expiry = new Date(Date.now() + 7*24*3600*1000).toISOString().slice(0,10);
+    trip.invite = { url: `https://tabihi-memo.example.com/join/${token}`, expiry, remaining: 5 };
+    rerenderPage(); showToast('招待URLを発行しました');
+  };
+  const reissueBtn = document.getElementById('btn-reissue-invite');
+  if(reissueBtn) reissueBtn.onclick = ()=>{ trip.invite = null; rerenderPage(); };
+  const copyBtn = document.getElementById('btn-copy-invite');
+  if(copyBtn) copyBtn.onclick = async ()=>{
+    try{
+      await navigator.clipboard.writeText(trip.invite.url);
+      showToast('URLをコピーしました');
+    }catch(e){ showToast('コピーできませんでした。手動で選択してください。'); }
+  };
+}
+
+initTripPage('invite.html', renderInviteTab, bindInviteTab);
+</script>
+</body>
+</html>

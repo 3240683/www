@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>通知設定｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   notify.html: 3.10 通知設定画面
+========================================================= */
+function renderNotifyTab(trip){
+  const n = trip.notifications;
+  return `
+  <div class="card">
+    <div class="section-title"><h2>通知設定</h2></div>
+    ${toggleRow('notify-settlement','精算通知','精算内容が更新されたときに通知します', n.settlement)}
+    ${toggleRow('notify-reminder','リマインド通知','未入力の実費や見積もりをお知らせします', n.reminder)}
+    ${toggleRow('notify-deadline','支払い期限通知','支払い期限が近づくとお知らせします', n.deadline)}
+    <div class="btn-row"><button class="btn accent" id="btn-save-notify">保存</button></div>
+  </div>`;
+}
+function bindNotifyTab(trip){
+  document.getElementById('btn-save-notify').onclick = ()=>{
+    trip.notifications = {
+      settlement: document.getElementById('notify-settlement').checked,
+      reminder: document.getElementById('notify-reminder').checked,
+      deadline: document.getElementById('notify-deadline').checked,
+    };
+    rerenderPage(); showToast('通知設定を保存しました');
+  };
+}
+
+initTripPage('notify.html', renderNotifyTab, bindNotifyTab);
+</script>
+</body>
+</html>

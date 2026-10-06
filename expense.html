@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>実費記録｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   expense.html: 3.5 実費登録画面（オフラインOCR／行選択機能つき）
+========================================================= */
+function renderExpenseTab(trip){
+  const rows = trip.expenses.map(ex=>`
+    <tr>
+      <td>${categoryLabel(ex.category)}</td>
+      <td class="amount">${yen(ex.actual)}</td>
+      <td>${escapeHtml(memberName(trip, ex.payer))}</td>
+      <td>${ex.date||'-'}</td>
+      <td class="muted">${escapeHtml(ex.memo||'')}</td>
+      <td><button class="icon-btn btn-del-expense" data-id="${ex.id}">🗑</button></td>
+    </tr>`).join('');
+  const memberOptions = trip.members.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  const catOptions = ESTIMATE_CATEGORIES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+
+  return `
+  <div class="card">
+    <div class="section-title"><h2>実費を記録</h2></div>
+    <div class="ocr-drop">
+      レシート画像をアップロードすると、端末内の画像認識（無料・オフライン対応）でテキストを読み取ります。読み取った行の中から、金額・日付として使いたい行をクリックして反映してください（自動判定した結果も入りますが、必ず確認・修正してください）。<br>
+      <input type="file" id="ocr-file" accept="image/*">
+      <div id="ocr-status" class="muted" style="margin-top:6px;"></div>
+      <div id="ocr-lines" style="margin-top:10px;"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>費目</label><select id="ex-category">${catOptions}</select></div>
+      <div class="field"><label>金額 <span style="color:var(--accent)">*</span></label><input type="text" inputmode="numeric" id="ex-amount" placeholder="円" oninput="formatMoneyInput(this)"></div>
+      <div class="field"><label>支払者</label><select id="ex-payer">${memberOptions}</select></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>支払日 <span style="color:var(--accent)">*</span></label><input type="date" id="ex-date"></div>
+      <div class="field"><label>メモ</label><input type="text" id="ex-memo" placeholder="任意"></div>
+    </div>
+    <div class="btn-row"><button class="btn accent" id="btn-add-expense">実費を追加</button></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><h2>記録一覧</h2></div>
+    ${trip.expenses.length ? `
+    <table class="data-table">
+      <thead><tr><th>費目</th><th>金額</th><th>支払者</th><th>支払日</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : '<p class="muted">まだ記録がありません。</p>'}
+  </div>`;
+}
+
+/* ---- オフラインOCR（Tesseract.js／無料・端末内処理） ---- */
+function extractAmountFromLine(line){
+  if(!line) return null;
+  const m = line.match(/([0-9][0-9,]{1,7})/g);
+  if(!m) return null;
+  const n = Number(m[m.length-1].replace(/,/g,''));
+  return isNaN(n) ? null : n;
+}
+function extractDateFromLine(line){
+  if(!line) return null;
+  const m = line.match(/(20\d{2})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+  if(!m) return null;
+  return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+}
+function parseReceiptText(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const totalLine = lines.find(l=>/合\s*計/.test(l));
+  const subtotalLine = lines.find(l=>/小\s*計/.test(l));
+  let amount = extractAmountFromLine(totalLine) || extractAmountFromLine(subtotalLine);
+  if(!amount){
+    const all = text.match(/[0-9][0-9,]{2,7}/g) || [];
+    const nums = all.map(s=>Number(s.replace(/,/g,''))).filter(n=>!isNaN(n) && n>0 && n<1000000);
+    if(nums.length) amount = Math.max(...nums);
+  }
+  const date = extractDateFromLine(text);
+  const store = lines.slice(0,6).find(l=> l.length>=2 && !/^[0-9¥,.\-\s]+$/.test(l)) || null;
+  return { category: null, amount, date, store, memo: null, rawText: text, lines };
+}
+async function runReceiptOcrOffline(file, onProgress){
+  const { data } = await Tesseract.recognize(file, 'jpn+eng', {
+    logger: (m)=>{
+      if(onProgress && m.status === 'recognizing text'){
+        onProgress(Math.round((m.progress||0) * 100));
+      }
+    }
+  });
+  const text = data.text || '';
+  return parseReceiptText(text);
+}
+function renderOcrLines(lines){
+  const container = document.getElementById('ocr-lines');
+  if(!lines || !lines.length){ container.innerHTML=''; return; }
+  container.innerHTML = `<div class="muted" style="margin-bottom:6px; text-align:left;">読み取った行（正しい行の「金額」「日付」「メモ」をクリックすると反映されます）</div>` +
+    lines.map((l,i)=>`
+      <div class="ocr-line">
+        <span class="txt">${escapeHtml(l)}</span>
+        <span class="actions">
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="amount">金額</button>
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="date">日付</button>
+          <button type="button" class="ocr-apply" data-idx="${i}" data-field="memo">メモ</button>
+        </span>
+      </div>`).join('');
+
+  container.querySelectorAll('.ocr-apply').forEach(btn=>{
+    btn.onclick = ()=>{
+      const idx = Number(btn.dataset.idx);
+      const field = btn.dataset.field;
+      const line = lines[idx];
+      if(field==='amount'){
+        const amt = extractAmountFromLine(line);
+        if(amt==null){ showToast('この行から金額を読み取れませんでした。他の行を試してください'); return; }
+        document.getElementById('ex-amount').value = amt.toLocaleString('ja-JP');
+      } else if(field==='date'){
+        const d = extractDateFromLine(line);
+        if(!d){ showToast('この行から日付を読み取れませんでした。他の行を試してください'); return; }
+        document.getElementById('ex-date').value = d;
+      } else if(field==='memo'){
+        document.getElementById('ex-memo').value = line;
+      }
+      container.querySelectorAll(`.ocr-apply[data-field="${field}"]`).forEach(b=> b.classList.remove('applied'));
+      btn.classList.add('applied');
+      showToast('反映しました');
+    };
+  });
+}
+
+function bindExpenseTab(trip){
+  document.getElementById('ocr-file').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const statusEl = document.getElementById('ocr-status');
+    document.getElementById('ocr-lines').innerHTML = '';
+    try{
+      statusEl.textContent = '読み取っています…（初回はライブラリのダウンロードに少し時間がかかります）';
+      const result = await runReceiptOcrOffline(file, (pct)=>{ statusEl.textContent = `読み取っています…${pct}%`; });
+      if(result.category) document.getElementById('ex-category').value = result.category;
+      if(result.amount) document.getElementById('ex-amount').value = Number(result.amount).toLocaleString('ja-JP');
+      if(result.date) document.getElementById('ex-date').value = result.date;
+      const memoParts = [result.store, result.memo].filter(Boolean);
+      document.getElementById('ex-memo').value = memoParts.length ? memoParts.join('　') : 'OCRで読み取り（要確認）';
+      renderOcrLines(result.lines);
+      statusEl.textContent = '読み取り完了。自動反映された内容と、下の行一覧を見比べて、間違っていれば該当行のボタンで直接反映してください。';
+      showToast('レシートを読み取りました');
+    }catch(err){
+      console.error(err);
+      statusEl.textContent = '読み取りに失敗しました（' + (err.message||'エラー') + '）。手入力してください。';
+      showToast('OCRに失敗しました。手入力してください。');
+    }
+  };
+  document.getElementById('btn-add-expense').onclick = ()=>{
+    const category = document.getElementById('ex-category').value;
+    const actual = getNumberValue('ex-amount');
+    const payer = document.getElementById('ex-payer').value;
+    const date = document.getElementById('ex-date').value;
+    const memo = document.getElementById('ex-memo').value.trim();
+    if(!actual){ showToast('金額を入力してください'); return; }
+    if(!date){ showToast('支払日を入力してください'); return; }
+    trip.expenses.push({ id: uid('exp'), category, estimate:0, actual, payer, date, memo });
+    rerenderPage(); showToast('実費を記録しました');
+  };
+  document.querySelectorAll('.btn-del-expense').forEach(el=>{
+    el.onclick = ()=>{
+      trip.expenses = trip.expenses.filter(x=>x.id!==el.dataset.id);
+      rerenderPage();
+    };
+  });
+}
+
+initTripPage('expense.html', renderExpenseTab, bindExpenseTab);
+</script>
+</body>
+</html>

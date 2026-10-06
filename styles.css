@@ -1,0 +1,314 @@
+  :root{
+    --ink:#1E3A34;
+    --ink-soft:#3E5A53;
+    --paper:#F1EEE4;
+    --card:#FFFFFF;
+    --line:#DAD5C4;
+    --accent:#B5502F;
+    --accent-soft:#F1DDD3;
+    --gold:#C7962C;
+    --gold-soft:#F3E7C6;
+    --good:#3E7A5C;
+    --good-soft:#DCEBE0;
+    --danger:#B5502F;
+    --radius-card: 4px;
+    --radius-pill: 999px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Zen Kaku Gothic New', system-ui, -apple-system, sans-serif;
+    font-size:15px;
+    line-height:1.6;
+    min-height:100vh;
+  }
+  h1,h2,h3,h4{
+    font-family:'Zen Old Mincho', serif;
+    font-weight:700;
+    margin:0 0 4px 0;
+    color:var(--ink);
+  }
+  button{
+    font-family:inherit;
+    cursor:pointer;
+  }
+  input, select, textarea{
+    font-family:inherit;
+    font-size:14px;
+  }
+  #app{
+    max-width:960px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--paper);
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 22px;
+    border-bottom:2px solid var(--ink);
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand .stamp{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:34px;height:34px;
+    border:2px solid var(--accent);
+    border-radius:50%;
+    color:var(--accent);
+    font-family:'Zen Old Mincho',serif;
+    font-weight:700;
+    font-size:16px;
+    transform:rotate(-8deg);
+  }
+  .brand h1{font-size:22px; letter-spacing:.02em;}
+  .topbar .who{
+    font-size:13px;
+    color:var(--ink-soft);
+    text-align:right;
+  }
+  .topbar .who button{
+    background:none;border:none;color:var(--accent);
+    font-size:12px; padding:0; text-decoration:underline;
+  }
+
+  main{flex:1; padding:22px; padding-bottom:60px;}
+
+  /* ---------- Cards / generic ---------- */
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius-card);
+    padding:20px;
+    margin-bottom:16px;
+  }
+  .card + .card{margin-top:16px;}
+  .section-title{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .section-title h2{font-size:19px;}
+  .muted{color:var(--ink-soft); font-size:13px;}
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+    font-weight:500;
+  }
+  .field input[type=text],
+  .field input[type=number],
+  .field input[type=date],
+  .field input[type=email],
+  .field input[type=password],
+  .field select,
+  .field textarea{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#FCFBF8;
+    color:var(--ink);
+  }
+  .field textarea{resize:vertical; min-height:56px;}
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+    background:#fff;
+  }
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:0 16px;}
+  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 16px;}
+  @media (max-width:600px){ .grid2,.grid3{grid-template-columns:1fr;} }
+
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 0; border-bottom:1px solid var(--line);
+  }
+  .toggle-row:last-child{border-bottom:none;}
+  .toggle-row .label{font-size:14px;}
+  .toggle-row .desc{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+  .switch{
+    position:relative; width:42px; height:24px; flex-shrink:0;
+  }
+  .switch input{opacity:0; width:100%; height:100%; margin:0; position:absolute; cursor:pointer; z-index:1;}
+  .switch .track{
+    position:absolute; inset:0; background:#D9D4C4; border-radius:var(--radius-pill); transition:.15s;
+  }
+  .switch .thumb{
+    position:absolute; top:3px; left:3px; width:18px; height:18px; background:#fff;
+    border-radius:50%; transition:.15s; box-shadow:0 1px 2px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .track{background:var(--good);}
+  .switch input:checked + .track + .thumb{left:21px;}
+
+  /* buttons */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:10px 18px;
+    border-radius:3px;
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:#fff;
+    font-size:14px;
+    font-weight:500;
+    letter-spacing:.02em;
+  }
+  .btn:hover{opacity:.9;}
+  .btn.secondary{
+    background:transparent; color:var(--ink); border:1px solid var(--line);
+  }
+  .btn.accent{background:var(--accent); border-color:var(--accent);}
+  .btn.ghost{
+    background:transparent; border:none; color:var(--ink-soft);
+    text-decoration:underline; padding:6px 4px;
+  }
+  .btn.danger{background:transparent; color:var(--accent); border:1px solid var(--accent-soft);}
+  .btn.sm{padding:6px 12px; font-size:13px;}
+  .btn:disabled{opacity:.45; cursor:not-allowed;}
+  .btn-row{display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;}
+
+  /* ---------- Trip list ---------- */
+  .trip-list-header{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;
+  }
+  .trip-card{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 18px;
+    border:1px solid var(--line);
+    border-left:4px solid var(--accent);
+    background:var(--card);
+    border-radius:3px;
+    margin-bottom:10px;
+    cursor:pointer;
+  }
+  .trip-card:hover{background:#FAF7EF;}
+  .trip-card .route{font-size:13px; color:var(--ink-soft); margin-top:4px;}
+  .trip-card .dates{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
+  .status-pill{
+    font-size:11.5px; padding:3px 10px; border-radius:var(--radius-pill);
+    background:var(--gold-soft); color:#7A5C0E; font-weight:500; white-space:nowrap;
+  }
+  .status-pill.done{background:var(--good-soft); color:var(--good);}
+  .empty-state{
+    text-align:center; padding:50px 20px; color:var(--ink-soft);
+  }
+  .empty-state h3{color:var(--ink); margin-bottom:8px;}
+
+  /* ---------- Trip detail tabs ---------- */
+  .trip-header{
+    display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;
+  }
+  .trip-header .route{color:var(--ink-soft); font-size:13.5px; margin-top:4px;}
+  .back-link{
+    font-size:13px; color:var(--ink-soft); text-decoration:none; display:inline-block; margin-bottom:14px; cursor:pointer;
+  }
+  .tabs{
+    display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid var(--line); margin-bottom:18px; padding-bottom:0;
+  }
+  .tab-btn{
+    background:none; border:none; padding:9px 13px; font-size:13.5px; color:var(--ink-soft);
+    border-bottom:2px solid transparent; white-space:nowrap;
+  }
+  .tab-btn.active{color:var(--ink); border-color:var(--accent); font-weight:700;}
+
+  table.data-table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  table.data-table th{
+    text-align:left; padding:8px 10px; color:var(--ink-soft); font-weight:500; font-size:12.5px;
+    border-bottom:1px solid var(--ink); white-space:nowrap;
+  }
+  table.data-table td{padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  table.data-table tr:last-child td{border-bottom:none;}
+
+  .amount{font-variant-numeric:tabular-nums; font-weight:600;}
+  .amount.pos{color:var(--good);}
+  .amount.neg{color:var(--accent);}
+
+  .kpi-row{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:6px;}
+  .kpi{
+    flex:1; min-width:140px; border:1px solid var(--line); border-radius:3px; padding:12px 14px; background:#FCFBF8;
+  }
+  .kpi .kpi-label{font-size:12px; color:var(--ink-soft);}
+  .kpi .kpi-value{font-family:'Zen Old Mincho',serif; font-size:22px; margin-top:2px; font-variant-numeric:tabular-nums;}
+
+  .transfer-item{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px; border:1px solid var(--line); border-radius:3px; margin-bottom:8px; background:#FCFBF8;
+  }
+  .transfer-item .who{font-size:14px;}
+  .transfer-item .who .arrow{color:var(--accent); margin:0 6px;}
+  .transfer-item .status-tag{font-size:11.5px; padding:3px 9px; border-radius:var(--radius-pill);}
+  .status-tag.unpaid{background:var(--gold-soft); color:#7A5C0E;}
+  .status-tag.pending{background:#EBE3F2; color:#6A4A8A;}
+  .status-tag.done{background:var(--good-soft); color:var(--good);}
+
+  .badge-owner{
+    font-size:10.5px; background:var(--ink); color:#fff; padding:2px 7px; border-radius:var(--radius-pill); margin-left:6px;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(30,58,52,.35); display:flex; align-items:flex-start; justify-content:center;
+    padding:40px 16px; overflow-y:auto; z-index:50;
+  }
+  .modal{
+    background:#fff; border-radius:5px; max-width:520px; width:100%; padding:24px; margin-top:20px;
+  }
+
+  .invite-box{
+    display:flex; align-items:center; gap:8px; background:#FCFBF8; border:1px dashed var(--line);
+    border-radius:3px; padding:12px 14px; font-family:monospace; font-size:13px; word-break:break-all; margin-bottom:12px;
+  }
+
+  .ocr-drop{
+    border:1.5px dashed var(--line); border-radius:4px; padding:22px; text-align:center; color:var(--ink-soft); font-size:13px; margin-bottom:14px; background:#FCFBF8;
+  }
+  .ocr-drop input{margin-top:10px;}
+
+  /* ▼▼▼ 変更: OCR行選択機能（ここから） ▼▼▼ */
+  .ocr-lines{ text-align:left; }
+  .ocr-line{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 10px; border:1px solid var(--line); border-radius:3px; background:#fff;
+    margin-bottom:6px; font-family:monospace; font-size:13px; word-break:break-all;
+  }
+  .ocr-line .txt{flex:1;}
+  .ocr-line .actions{display:flex; gap:6px; flex-shrink:0;}
+  .ocr-line .actions button{
+    font-size:11.5px; padding:4px 8px; border-radius:var(--radius-pill);
+    border:1px solid var(--line); background:var(--paper); color:var(--ink-soft);
+  }
+  .ocr-line .actions button.applied{background:var(--good); border-color:var(--good); color:#fff;}
+  /* ▲▲▲ 変更: OCR行選択機能（ここまで） ▲▲▲ */
+
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:11px 20px; border-radius:var(--radius-pill);
+    font-size:13.5px; box-shadow:0 4px 16px rgba(0,0,0,.25); z-index:100; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+
+  .icon-btn{background:none; border:none; color:var(--ink-soft); font-size:16px; padding:4px 6px;}
+  .icon-btn:hover{color:var(--accent);}
+  .flow-note{font-size:12.5px; color:var(--ink-soft); margin-top:10px; border-left:2px solid var(--line); padding-left:10px;}
+
+/* ===== 追加: マルチページ化に伴うナビゲーション用スタイル ===== */
+.tab-btn{ text-decoration:none; display:inline-block; cursor:pointer; }
+.back-link{ cursor:pointer; }
+.topbar .who a{
+  color:var(--accent); font-size:12px; text-decoration:underline;
+}

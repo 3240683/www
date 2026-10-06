@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>参加者｜旅費メモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+/* =========================================================
+   members.html: 3.8 参加者管理画面 + 端数調整の設定
+========================================================= */
+function renderMembersTab(trip){
+  const iAmOwner = isOwner(trip, state.currentUserId);
+  const rows = trip.members.map(m=>`
+    <tr>
+      <td>${escapeHtml(m.name)}${m.owner?'<span class="badge-owner">オーナー</span>':''}</td>
+      <td>${m.owner?'オーナー':'一般'}</td>
+      <td>招待URL</td>
+      <td>
+        ${iAmOwner && !m.owner ? `<button class="btn ghost btn-make-owner" data-id="${m.id}">権限変更</button>` : ''}
+        ${trip.members.length>1 ? `<button class="btn ghost btn-remove-member" data-id="${m.id}">削除</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  return `
+  <div class="card">
+    <div class="section-title"><h2>参加者一覧</h2></div>
+    <table class="data-table">
+      <thead><tr><th>名前</th><th>権限</th><th>招待方法</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${!iAmOwner ? `<p class="muted" style="margin-top:6px;">権限の変更はオーナーのみが行えます。</p>` : ''}
+    <div class="btn-row"><button class="btn secondary" id="btn-add-member-demo">参加者を追加（デモ）</button></div>
+    <p class="muted" style="margin-top:6px;">実際の招待は「招待」タブで発行したURLを共有してください。</p>
+  </div>
+  <div class="card">
+    <div class="section-title"><h2>端数調整の設定</h2></div>
+    <div class="grid2">
+      <div class="field">
+        <label>精算単位</label>
+        <select id="round-unit">
+          <option value="1">1円（通常）</option>
+          <option value="10">10円単位</option>
+          <option value="100">100円単位</option>
+          <option value="500">500円単位</option>
+          <option value="1000">1000円単位</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>端数負担方法</label>
+        <select id="round-method">
+          <option value="random">ランダム</option>
+          <option value="rotation">持ち回り</option>
+          <option value="owner">管理者負担</option>
+          <option value="payer_priority">立替者優先</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn accent" id="btn-save-rounding">設定を保存</button></div>
+  </div>`;
+}
+function bindMembersTab(trip){
+  document.getElementById('round-unit').value = String(trip.roundingUnit);
+  document.getElementById('round-method').value = trip.roundingMethod;
+  document.getElementById('btn-save-rounding').onclick = ()=>{
+    trip.roundingUnit = Number(document.getElementById('round-unit').value);
+    trip.roundingMethod = document.getElementById('round-method').value;
+    rerenderPage(); showToast('端数調整の設定を保存しました');
+  };
+  document.getElementById('btn-add-member-demo').onclick = ()=>{
+    const name = prompt('参加者の名前を入力してください');
+    if(!name) return;
+    trip.members.push({ id: uid('mem'), name: name.trim(), owner:false });
+    rerenderPage(); showToast('参加者を追加しました');
+  };
+  document.querySelectorAll('.btn-make-owner').forEach(el=>{
+    el.onclick = ()=>{
+      if(!isOwner(trip, state.currentUserId)){
+        showToast('権限の変更はオーナーのみが行えます');
+        return;
+      }
+      const m = trip.members.find(x=>x.id===el.dataset.id);
+      if(!m || m.owner) return;
+      openYesNoModal(`${m.name}さんにオーナーの権限を譲渡しますか？`,
+        ()=>{
+          // オーナーは一人だけになるよう、既存のオーナーを解除してから譲渡する
+          trip.members.forEach(x=> x.owner = false);
+          m.owner = true;
+          rerenderPage();
+          showToast(`${m.name}さんにオーナー権限を譲渡しました`);
+        },
+        ()=>{ /* いいえ：権限は変更しない */ }
+      );
+    };
+  });
+  document.querySelectorAll('.btn-remove-member').forEach(el=>{
+    el.onclick = ()=>{
+      trip.members = trip.members.filter(x=>x.id!==el.dataset.id);
+      rerenderPage(); showToast('参加者を削除しました');
+    };
+  });
+}
+
+initTripPage('members.html', renderMembersTab, bindMembersTab);
+</script>
+</body>
+</html>
