@@ -77,123 +77,197 @@ function renderExpenseTab(trip){
 }
 
 /* ===BEGIN-EXTRACT=== 変更: 金額・日付の候補抽出ロジック（ここから） */
-// 全角→半角などの正規化（￥→¥、１２３→123、，→, など）
-function normalizeLine(l){ return String(l||'').normalize('NFKC'); }
-// 数字の並びの中にある誤読（O→0、I/l/|→1）を直す
+// ---- 前処理: 全角→半角、日本語の文字間に入る空白の除去（「合 計」→「合計」） ----
+function cleanLine(l){
+  return String(l||'').normalize('NFKC')
+    .replace(/(?<=[\u3040-\u30ff\u4e00-\u9fff])\s+(?=[\u3040-\u30ff\u4e00-\u9fff])/g, '')
+    .trim();
+}
+// 数字まわりの誤読を直す（O/Q/D→0、I/l/|→1）
 function fixDigitMisreads(l){
   return l
-    .replace(/(?<=[\d,.])[Oo]|[Oo](?=[\d,])/g, '0')
+    .replace(/(?<=\d)[OoQD]/g, '0').replace(/[OoQD](?=\d)/g, '0')
     .replace(/(?<=\d)[Il|]|[Il|](?=\d{2})/g, '1');
 }
 
-const RE_PLUS  = /合\s*計|お\s*買\s*上|ご\s*請\s*求|請\s*求\s*額|領\s*収\s*金\s*額|総\s*計|TOTAL|Total/;
-const RE_SUB   = /小\s*計/;
+const RE_PLUS  = /合計|お買上|ご請求|請求額|領収金額|総計|TOTAL|Total|(?<![小少会])計/;
+const RE_SUB   = /[小少]計/;
 const RE_MINUS_STRICT = /預|釣/;
-const RE_MINUS = /預|釣|現\s*金|ポイント|対\s*象|税|割\s*引|クーポン|TEL|Tel|電話|登録|番号|No\.?|ID/;
-const RE_DATE_LINE = /(20\d{2}|\d{2})\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}/;
+const RE_MINUS = /預|釣|現金|ポイント|対象|税|軽減|割引|クーポン|TEL|Tel|電話|登録|番号|No\.?|ID/;
 const RE_PHONE = /\d{2,4}-\d{2,4}-\d{3,4}/;
 
-// 金額候補: 「合計」などの行にあり、¥や円が付いた数字ほど高得点。お預り・お釣り・税・点数などは減点/除外。
-function extractAmountCandidates(lines){
-  const best = new Map(); // 金額 -> {value, score, line}
-  lines.forEach(raw=>{
-    const line = fixDigitMisreads(normalizeLine(raw));
-    if(RE_DATE_LINE.test(line) || RE_PHONE.test(line)) return;
-
-    const hasPlus = RE_PLUS.test(line);
-    const hasSub  = RE_SUB.test(line);
-    const minus   = hasPlus ? RE_MINUS_STRICT.test(line) : RE_MINUS.test(line);
-
-    const re = /(?<![\d])([¥\\]|Y)?\s*(\d{1,3}(?:[,.]\d{3})+|\d{1,7})(?!\d)\s*(円)?/g;
-    let m;
-    while((m = re.exec(line))){
-      const before = line.slice(0, m.index).slice(-1);
-      const after  = line.slice(re.lastIndex);
-      if(before === '@' || before === '＠') continue;           // @420 のような単価は除外
-      if(/^\s*[点個枚番号%]/.test(after)) continue;              // 「2点」「2個」などの数量は除外
-      const hasYen = !!(m[1] || m[3]);
-      const hasComma = /[,.]/.test(m[2]);
-      const value = parseInt(m[2].replace(/[,.]/g,''), 10);
-      if(!(value >= 1 && value <= 9999999)) continue;
-
-      let score = 0;
-      if(hasYen) score += 4;
-      if(hasComma) score += 1;
-      if(hasPlus) score += 10; else if(hasSub) score += 3;
-      if(minus) score -= 8;
-      if(!hasYen && !hasComma && String(value).length <= 2) score -= 5;
-
-      const cur = best.get(value);
-      if(!cur || cur.score < score) best.set(value, { value, score, line: raw });
-    }
-  });
-  const sorted = [...best.values()].sort((a,b)=> b.score - a.score);
-  // 有力な候補（スコアが正）だけを表示。1件も無い場合のみ上位2件を参考表示する
-  const strong = sorted.filter(c=> c.score > 0);
-  return (strong.length ? strong : sorted.slice(0,2)).slice(0, 4);
-}
-
-// 日付候補: 2026/09/25・2026年9月25日・26.09.25・令和8年9月25日 などに対応。時刻が同じ行にあれば加点。
-function extractDateCandidates(lines){
-  const found = new Map(); // 'YYYY-MM-DD' -> {value, score, line}
+// ---- 日付: 2026/09/25・2026年9月25日・26.09.25・令和8年9月25日、「/」が「7」などに誤読された 2026709/25 にも対応 ----
+function findDates(rawLine){
+  const line = fixDigitMisreads(cleanLine(rawLine));
+  const hasTime = /\d{1,2}\s*:\s*\d{2}/.test(line);
+  const out = [];
   const pad = n => String(n).padStart(2,'0');
   const valid = (y,mo,d)=> mo>=1 && mo<=12 && d>=1 && d<=31 && y>=2000 && y<=2100;
-  lines.forEach(raw=>{
-    const line = fixDigitMisreads(normalizeLine(raw));
-    const hasTime = /\d{1,2}\s*:\s*\d{2}/.test(line);
-    let m;
-    const re1 = /(20\d{2}|\d{2})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/g;
-    while((m = re1.exec(line))){
-      let y = Number(m[1]); const mo = Number(m[2]), d = Number(m[3]);
-      let score = 1;
-      if(m[1].length === 4) score += 2;
-      else { if(y < 20 || y > 39) continue; y += 2000; }      // 2桁年は 20〜39 のみ採用（電話番号等の誤検出を防ぐ）
-      if(!valid(y,mo,d)) continue;
-      if(hasTime) score += 2;
-      const key = `${y}-${pad(mo)}-${pad(d)}`;
-      const cur = found.get(key);
-      if(!cur || cur.score < score) found.set(key, { value:key, score, line: raw });
-    }
-    const re2 = /(?:令和|R)\s*(\d{1,2})\s*[年.\/\-]\s*(\d{1,2})\s*[月.\/\-]\s*(\d{1,2})/g;
-    while((m = re2.exec(line))){
-      const y = 2018 + Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
-      if(!valid(y,mo,d)) continue;
-      const key = `${y}-${pad(mo)}-${pad(d)}`;
-      const score = 2 + (hasTime ? 2 : 0);
-      const cur = found.get(key);
-      if(!cur || cur.score < score) found.set(key, { value:key, score, line: raw });
+  const push = (y,mo,d,score)=>{
+    if(!valid(y,mo,d)) return;
+    out.push({ value: `${y}-${pad(mo)}-${pad(d)}`, score: score + (hasTime ? 2 : 0) });
+  };
+  let m;
+  const re1 = /(?<!\d)(20\d{2}|\d{2})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/g;
+  while((m = re1.exec(line))){
+    let y = Number(m[1]);
+    if(m[1].length === 4) push(y, Number(m[2]), Number(m[3]), 3);
+    else if(y >= 20 && y <= 39) push(2000 + y, Number(m[2]), Number(m[3]), 1);   // 2桁年は20〜39のみ
+  }
+  const re2 = /(?:令和|R)\s*(\d{1,2})\s*[年.\/\-]\s*(\d{1,2})\s*[月.\/\-]\s*(\d{1,2})/g;
+  while((m = re2.exec(line))) push(2018 + Number(m[1]), Number(m[2]), Number(m[3]), 3);
+  const re3 = /(20\d{2})[^\d\s]{0,2}[71lI|]?\s*(0[1-9]|1[0-2])\s*[\/\-.月7]?\s*(0[1-9]|[12]\d|3[01])/g;
+  while((m = re3.exec(line))) push(Number(m[1]), Number(m[2]), Number(m[3]), 1);
+  return out;
+}
+function extractDateCandidates(rawLines){
+  const best = new Map();
+  rawLines.forEach(raw=> findDates(raw).forEach(d=>{
+    const cur = best.get(d.value);
+    if(!cur || cur.score < d.score) best.set(d.value, d);
+  }));
+  return [...best.values()].sort((a,b)=> b.score - a.score).slice(0, 3);
+}
+
+// ---- 金額: 1行から数字トークンを取り出す（単価@420・数量2点・電話番号・日付行は除外） ----
+function amountTokens(rawLine){
+  const line = fixDigitMisreads(cleanLine(rawLine));
+  const tokens = [];
+  if(findDates(rawLine).length || /\d{1,2}\s*:\s*\d{2}/.test(line) || RE_PHONE.test(line)) return { line, tokens };
+  const re = /(?<!\d)([¥\\]|Y)?\s*(\d{1,3}(?:[,.]\d{3})+|\d{1,7})(?!\d)\s*(円)?/g;
+  let m;
+  while((m = re.exec(line))){
+    const before = line.slice(0, m.index).slice(-1);
+    const after  = line.slice(re.lastIndex);
+    if(before === '@' || before === '-' || /^\s*-/.test(after)) continue;
+    if(/^\s*[点個枚番号%]/.test(after)) continue;
+    const value = parseInt(m[2].replace(/[,.]/g,''), 10);
+    if(!(value >= 1 && value <= 9999999)) continue;
+    tokens.push({ value, hasYen: !!(m[1] || m[3]), hasComma: /[,.]/.test(m[2]) });
+  }
+  return { line, tokens };
+}
+function lineFlags(line){
+  const hasPlus = RE_PLUS.test(line);
+  return {
+    hasPlus,
+    hasSub: !hasPlus && RE_SUB.test(line),
+    minus: hasPlus ? RE_MINUS_STRICT.test(line) : RE_MINUS.test(line)
+  };
+}
+
+// 金額候補:
+//  ・「合計」行／¥や円が付いた数字を高く評価、お預り・お釣り・税の行は減点
+//  ・同じ金額が複数行に出てくるほど加点（レシートは合計が小計・対象額などで繰り返し出る）
+//  ・「お預り − お釣り ＝ 合計」が成り立つ組み合わせを見つけたら、その合計に加点し、お預り・お釣りは候補から外す
+//  ・合計の約6.5〜9.5%（内税の目安）にあたる金額は消費税とみなして外す
+function extractAmountCandidates(rawLines){
+  const map = new Map();
+  rawLines.forEach(raw=>{
+    const { line, tokens } = amountTokens(raw);
+    if(!tokens.length) return;
+    const f = lineFlags(line);
+    tokens.forEach(t=>{
+      let s = 0;
+      if(t.hasYen) s += 4;
+      if(t.hasComma) s += 1;
+      if(f.hasPlus) s += 10; else if(f.hasSub) s += 3;
+      if(f.minus) s -= 8;
+      if(!t.hasYen && !t.hasComma && String(t.value).length <= 2) s -= 12;
+      let e = map.get(t.value);
+      if(!e){ e = { value:t.value, score:s, count:0, solid:false, tag:'', flag:false, tax:false }; map.set(t.value, e); }
+      e.count++;
+      e.score = Math.max(e.score, s);
+      if(t.hasYen || t.hasComma) e.solid = true;
+      if(f.hasPlus) e.tag = '合計'; else if(f.hasSub && !e.tag) e.tag = '小計';
+    });
+  });
+  const arr = [...map.values()];
+  arr.forEach(c=>{ c.score += Math.min(3, c.count - 1) * 2; });
+
+  // お預り − お釣り ＝ 合計
+  const solid = arr.filter(c=> c.solid);
+  let best = null;
+  solid.forEach(a=> solid.forEach(b=>{
+    if(a.value <= b.value) return;
+    const c = arr.find(x=> x.value === a.value - b.value);
+    if(!c || c === a || c === b) return;
+    if(!(c.score > a.score && c.score > b.score)) return;
+    if(!best || c.score > best.c.score) best = { a, b, c };
+  }));
+  if(best){ best.c.score += 8; best.c.tag = '合計'; best.a.flag = true; best.b.flag = true; }
+
+  // 消費税っぽい金額
+  arr.forEach(t=>{
+    if(arr.some(c=> c.value > t.value && c.score > 0 && t.value / c.value >= 0.065 && t.value / c.value <= 0.095)){
+      t.score -= 6; t.tax = true;
     }
   });
-  return [...found.values()].sort((a,b)=> b.score - a.score).slice(0, 3);
+
+  const sorted = arr.filter(c=> !c.flag).sort((a,b)=> b.score - a.score);
+  const strong = sorted.filter(c=> c.score > 0 && !c.tax);
+  const topScore = strong.length ? strong[0].score : 0;
+  const shown = strong.filter(c=> c.score >= topScore * 0.3);   // 1位の3割未満のスコアは誤読ノイズとして非表示
+  return (shown.length ? shown : sorted.slice(0, 2)).slice(0, 3)
+    .map(c=> ({ value:c.value, score:c.score, label: c.tag || (c.count >= 2 ? '複数行に登場' : '') }));
 }
 
-// 店舗名の推定: 先頭付近で、数字記号だけではなく「領収」「***」を含まない行
-function guessStore(lines){
-  return lines.slice(0,8).find(l=>{
-    const t = normalizeLine(l);
-    return t.length >= 2 && !/^[0-9¥,.\-\s*＊]+$/.test(t) && !/領\s*収|\*{2,}|レシート/.test(t);
-  }) || null;
+// 店舗名の推定: 先頭付近で「…店」で終わる行を優先、無ければ最初の文字らしい行
+function guessStore(rawLines){
+  const cands = rawLines.slice(0, 10).map(cleanLine)
+    .map(l=> l.replace(/^[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]+|[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff)]+$/g, '').trim())
+    .filter(l=> /[A-Za-z\u3040-\u30ff\u4e00-\u9fff]{3,}/.test(l) && !/領収|レシート|ご利用|ありがとう|\d{4,}/.test(l));
+  return cands.find(l=> /店$/.test(l)) || cands[0] || null;
 }
 
-// 金額・日付以外の部分（互換用）: 1行から金額/日付を取り出す
+// 「全行表示」用: 金額・日付に関係しそうな行だけに絞る（住所・電話・領収証・軽減税率などは除外）
+function relevantLines(rawLines){
+  const seen = new Set(), out = [];
+  rawLines.forEach(raw=>{
+    const l = cleanLine(raw);
+    if(!l || seen.has(l)) return;
+    const hasDate = findDates(raw).length > 0;
+    const { line, tokens } = amountTokens(raw);
+    const f = lineFlags(line);
+    const keep = hasDate || tokens.some(t=> t.hasYen || t.hasComma) || f.hasPlus || f.hasSub;
+    if(!keep) return;
+    if(!hasDate && /税|軽減|対象|預|釣|登録|番号/.test(l)) return;
+    seen.add(l); out.push(l);
+  });
+  return out;
+}
+
+// 1行から取り出す（「全行表示」のボタン用）
 function extractAmountFromLine(line){
-  const c = extractAmountCandidates([line]);
-  return c.length ? c[0].value : null;
+  const { tokens } = amountTokens(line);
+  const t = tokens.find(x=> x.hasYen || x.hasComma) || tokens[tokens.length - 1];
+  return t ? t.value : null;
 }
 function extractDateFromLine(line){
-  const c = extractDateCandidates([line]);
-  return c.length ? c[0].value : null;
+  const d = findDates(line).sort((a,b)=> b.score - a.score)[0];
+  return d ? d.value : null;
+}
+function analyzeLines(lines){
+  return {
+    amounts: extractAmountCandidates(lines),
+    dates: extractDateCandidates(lines),
+    store: guessStore(lines),
+    lines
+  };
 }
 /* ===END-EXTRACT=== 変更: 金額・日付の候補抽出ロジック（ここまで） */
 
-// 変更: 画像の前処理（縮小・グレースケール・コントラスト強調）で認識精度を上げる
-async function preprocessImage(file){
+// 変更: 画像の前処理。縮小しすぎず（長辺3000px前後）、グレースケール化だけを行う。
+// ※ コントラストの強制伸張は日付の「/」が「7」に化ける原因になったため行わない
+async function preprocessImage(file, maxSide){
   try{
     let bmp;
     try{ bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
     catch(e){ bmp = await createImageBitmap(file); }
     const longSide = Math.max(bmp.width, bmp.height);
-    const scale = longSide > 2000 ? 2000 / longSide : (longSide < 1200 ? 1600 / longSide : 1);
+    let target = Math.min(longSide, maxSide);
+    if(longSide < 2400) target = 2400;          // 小さい画像は拡大
+    const scale = target / longSide;
     const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
@@ -201,20 +275,9 @@ async function preprocessImage(file){
     ctx.drawImage(bmp, 0, 0, w, h);
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
-    const hist = new Array(256).fill(0);
     for(let i=0; i<d.length; i+=4){
       const g = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
-      d[i] = d[i+1] = d[i+2] = g; hist[g]++;
-    }
-    const total = w * h;
-    let acc = 0, lo = 0, hi = 255;
-    for(let v=0; v<256; v++){ acc += hist[v]; if(acc >= total*0.02){ lo = v; break; } }
-    acc = 0;
-    for(let v=255; v>=0; v--){ acc += hist[v]; if(acc >= total*0.02){ hi = v; break; } }
-    const range = Math.max(1, hi - lo);
-    for(let i=0; i<d.length; i+=4){
-      const v = Math.max(0, Math.min(255, Math.round((d[i] - lo) * 255 / range)));
-      d[i] = d[i+1] = d[i+2] = v;
+      d[i] = d[i+1] = d[i+2] = g;
     }
     ctx.putImageData(img, 0, 0);
     return canvas;
@@ -224,26 +287,36 @@ async function preprocessImage(file){
   }
 }
 
-async function runReceiptOcrOffline(file, onProgress){
-  const input = await preprocessImage(file);
-  const { data } = await Tesseract.recognize(input, 'jpn+eng', {
+// 変更: 1回目（長辺3000px）で金額・日付が十分に確からしければそのまま採用。
+// 日付が無い／金額の確からしさが低い場合だけ、解像度を変えて2回目を読み取って結果を統合する。
+async function runReceiptOcrOffline(file, onStatus){
+  let label = '読み取っています…';
+  const worker = await Tesseract.createWorker('jpn+eng', 1, {
     logger: (m)=>{
-      if(onProgress && m.status === 'recognizing text'){
-        onProgress(Math.round((m.progress||0) * 100));
-      }
+      if(onStatus && m.status === 'recognizing text') onStatus(`${label}${Math.round((m.progress||0)*100)}%`);
     }
   });
-  const text = data.text || '';
-  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
-  return {
-    amounts: extractAmountCandidates(lines),
-    dates: extractDateCandidates(lines),
-    store: guessStore(lines),
-    lines
-  };
+  try{
+    const pass = async (maxSide)=>{
+      const img = await preprocessImage(file, maxSide);
+      const { data } = await worker.recognize(img);
+      return (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
+    };
+    let lines = await pass(3000);
+    let result = analyzeLines(lines);
+    const weak = !result.dates.length || !result.amounts.length || result.amounts[0].score < 12;
+    if(weak){
+      label = '精度を上げるため再読み取りしています…';
+      lines = lines.concat(await pass(4000));
+      result = analyzeLines(lines);
+    }
+    return result;
+  } finally {
+    await worker.terminate();
+  }
 }
 
-// 変更: 候補をチップで表示し、クリックで入力欄に反映する（全行は折りたたみの中）
+// 変更: 候補をチップで表示（崩れた生テキストではなく「合計」などのラベルを表示）。全行は折りたたみの中
 function setSelected(container, kind, chip){
   container.querySelectorAll(`.cand-chip[data-kind="${kind}"]`).forEach(b=> b.classList.remove('selected'));
   chip.classList.add('selected');
@@ -252,11 +325,11 @@ function renderOcrCandidates(result){
   const box = document.getElementById('ocr-lines');
   const amountChips = result.amounts.map((c,i)=>`
     <button type="button" class="cand-chip ${i===0?'selected':''}" data-kind="amount" data-value="${c.value}">
-      ${yen(c.value)}<span class="src">${escapeHtml(c.line)}</span>
+      ${yen(c.value)}${c.label ? `<span class="src">${escapeHtml(c.label)}</span>` : ''}
     </button>`).join('');
   const dateChips = result.dates.map((c,i)=>`
     <button type="button" class="cand-chip ${i===0?'selected':''}" data-kind="date" data-value="${c.value}">
-      ${c.value.replace(/-/g,'/')}<span class="src">${escapeHtml(c.line)}</span>
+      ${c.value.replace(/-/g,'/')}
     </button>`).join('');
 
   box.innerHTML = `
@@ -269,7 +342,7 @@ function renderOcrCandidates(result){
       <div class="cand-list">${dateChips || '<span class="muted">日付らしい文字列が見つかりませんでした。手入力してください。</span>'}</div>
     </div>
     <details class="ocr-all">
-      <summary>候補に無い場合：読み取った全行を表示</summary>
+      <summary>候補に無い場合：金額・日付に関係しそうな行を表示</summary>
       <div id="ocr-all-lines" style="margin-top:8px;"></div>
     </details>`;
 
@@ -282,19 +355,19 @@ function renderOcrCandidates(result){
       showToast('反映しました');
     };
   });
-  renderAllLines(result.lines);
+  renderAllLines(relevantLines(result.lines));
 }
 
-// 全行表示（折りたたみ内）。各行の「金額」「日付」「メモ」ボタンで直接反映できる
+// 絞り込み済みの行を表示。「金額」「日付」ボタンでその行から直接反映できる
 function renderAllLines(lines){
   const container = document.getElementById('ocr-all-lines');
+  if(!lines.length){ container.innerHTML = '<span class="muted">該当する行がありません。</span>'; return; }
   container.innerHTML = lines.map((l,i)=>`
     <div class="ocr-line">
       <span class="txt">${escapeHtml(l)}</span>
       <span class="actions">
         <button type="button" class="ocr-apply" data-idx="${i}" data-field="amount">金額</button>
         <button type="button" class="ocr-apply" data-idx="${i}" data-field="date">日付</button>
-        <button type="button" class="ocr-apply" data-idx="${i}" data-field="memo">メモ</button>
       </span>
     </div>`).join('');
   container.querySelectorAll('.ocr-apply').forEach(btn=>{
@@ -305,12 +378,10 @@ function renderAllLines(lines){
         const v = extractAmountFromLine(line);
         if(v == null){ showToast('この行から金額を読み取れませんでした'); return; }
         document.getElementById('ex-amount').value = v.toLocaleString('ja-JP');
-      } else if(field === 'date'){
+      } else {
         const v = extractDateFromLine(line);
         if(!v){ showToast('この行から日付を読み取れませんでした'); return; }
         document.getElementById('ex-date').value = v;
-      } else {
-        document.getElementById('ex-memo').value = line;
       }
       container.querySelectorAll(`.ocr-apply[data-field="${field}"]`).forEach(b=> b.classList.remove('applied'));
       btn.classList.add('applied');
@@ -327,7 +398,7 @@ function bindExpenseTab(trip){
     document.getElementById('ocr-lines').innerHTML = '';
     try{
       statusEl.textContent = '読み取っています…（初回はライブラリのダウンロードに少し時間がかかります）';
-      const result = await runReceiptOcrOffline(file, (pct)=>{ statusEl.textContent = `読み取っています…${pct}%`; });
+      const result = await runReceiptOcrOffline(file, (msg)=>{ statusEl.textContent = msg; });
       // 一番有力な候補を自動で入力欄に反映
       if(result.amounts.length) document.getElementById('ex-amount').value = result.amounts[0].value.toLocaleString('ja-JP');
       if(result.dates.length) document.getElementById('ex-date').value = result.dates[0].value;

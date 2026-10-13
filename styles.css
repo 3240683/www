@@ -19,23 +19,23 @@
   body{
     background:var(--paper);
     color:var(--ink);
-    font-family:'Zen Kaku Gothic New', system-ui, -apple-system, sans-serif;
+    font-family:'Noto Serif JP', system-ui, -apple-system, sans-serif;
     font-size:15px;
     line-height:1.6;
     min-height:100vh;
   }
   h1,h2,h3,h4{
-    font-family:'Zen Old Mincho', serif;
+    font-family:'Noto Sans JP', serif;
     font-weight:700;
     margin:0 0 4px 0;
     color:var(--ink);
   }
   button{
-    font-family:inherit;
+    font-family:'Noto Sans JP', sans-serif;
     cursor:pointer;
   }
   input, select, textarea{
-    font-family:inherit;
+    font-family:'Noto Sans JP', sans-serif;
     font-size:14px;
   }
   #app{
@@ -68,7 +68,7 @@
     border:2px solid var(--accent);
     border-radius:50%;
     color:var(--accent);
-    font-family:'Zen Old Mincho',serif;
+    font-family:'Noto Serif JP', serif;
     font-weight:700;
     font-size:16px;
     transform:rotate(-8deg);
