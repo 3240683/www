@@ -131,54 +131,211 @@ function bindTripList(){
 }
 
 /* ---- 3.3 旅行作成画面（モーダル） ---- */
-function openTripFormModal(tripId){
+
+function openTripFormModal(tripId) {
   const trip = tripId ? findTrip(tripId) : null;
   const root = document.getElementById('modal-root');
+
+  const old = trip?.transport || {};
+  const yen = n => Math.round(n).toLocaleString('ja-JP') + '円';
+
   root.innerHTML = `
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal">
-      <h2>${trip? '旅行を編集' : '旅行を作成'}</h2>
-      <div class="field"><label>旅行名 *</label><input type="text" id="tf-title" value="${trip?escapeHtml(trip.title):''}" placeholder="例）春の京都旅行"></div>
-      <div class="grid2">
-        <div class="field"><label>出発地 *</label><input type="text" id="tf-departure" value="${trip?escapeHtml(trip.departure):''}" placeholder="例）東京駅"></div>
-        <div class="field"><label>目的地 *</label><input type="text" id="tf-destination" value="${trip?escapeHtml(trip.destination):''}" placeholder="例）京都駅"></div>
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal">
+        <h2>${trip ? '旅行を編集' : '旅行を作成'}</h2>
+
+        <div class="field">
+          <label>旅行名 *</label>
+          <input id="tf-title" placeholder="例）春の京都旅行"
+            value="${escapeHtml(trip?.title || '')}">
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label>出発地 *</label>
+            <input id="tf-departure" placeholder="例）東京駅"
+              value="${escapeHtml(trip?.departure || '')}">
+          </div>
+          <div class="field">
+            <label>目的地 *</label>
+            <input id="tf-destination" placeholder="例）京都駅"
+              value="${escapeHtml(trip?.destination || '')}">
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label>開始日 *</label>
+            <input type="date" id="tf-start"
+              value="${trip?.startDate || ''}">
+          </div>
+          <div class="field">
+            <label>終了日 *</label>
+            <input type="date" id="tf-end"
+              value="${trip?.endDate || ''}">
+          </div>
+        </div>
+
+        <h3>交通費の計算</h3>
+
+        <div class="field">
+          <label>交通手段</label>
+          <select id="tf-method">
+            <option value="train">電車・新幹線</option>
+            <option value="bus">高速バス</option>
+            <option value="plane">飛行機</option>
+            <option value="car">車</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>片道料金（1人分・円）</label>
+          <input type="number" id="tf-fare" min="0" step="1"
+            placeholder="例）5000"
+            value="${old.oneWayFare ?? ''}">
+        </div>
+
+        <div class="field">
+          <label>人数</label>
+          <input type="number" id="tf-people" min="1" max="100"
+            step="1" value="${old.people || trip?.members?.length || 1}">
+        </div>
+
+        <div class="field">
+          <p>片道合計：<strong id="tf-one">0円</strong></p>
+          <p>往復合計：<strong id="tf-round">0円</strong></p>
+          <p>1人当たり：<strong id="tf-person">0円</strong></p>
+        </div>
+
+        <div class="field">
+          <label>1人当たりの予算上限（円）</label>
+          <input type="number" id="tf-budget" min="0"
+            value="${trip?.budgetPerPerson || ''}"
+            placeholder="例）30000">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn accent" id="tf-save">保存</button>
+          <button class="btn secondary" id="tf-cancel">キャンセル</button>
+        </div>
       </div>
-      <div class="grid2">
-        <div class="field"><label>開始日 *</label><input type="date" id="tf-start" value="${trip?trip.startDate:''}"></div>
-        <div class="field"><label>終了日 *</label><input type="date" id="tf-end" value="${trip?trip.endDate:''}"></div>
-      </div>
-      <div class="btn-row">
-        <button class="btn accent" id="tf-save">保存</button>
-        <button class="btn secondary" id="tf-cancel">キャンセル</button>
-      </div>
-    </div>
-  </div>`;
-  document.getElementById('tf-cancel').onclick = ()=> root.innerHTML='';
-  document.getElementById('modal-overlay').addEventListener('click', (e)=>{ if(e.target.id==='modal-overlay') root.innerHTML=''; });
-  document.getElementById('tf-save').onclick = ()=>{
-    const title = document.getElementById('tf-title').value.trim();
-    const departure = document.getElementById('tf-departure').value.trim();
-    const destination = document.getElementById('tf-destination').value.trim();
-    const startDate = document.getElementById('tf-start').value;
-    const endDate = document.getElementById('tf-end').value;
-    if(!title || !departure || !destination || !startDate || !endDate){
-      showToast('すべての項目を入力してください'); return;
+    </div>`;
+
+  const $ = id => document.getElementById(id);
+
+  $('tf-method').value = old.method || 'train';
+
+  function updateCost() {
+    const fare = Math.max(0, Number($('tf-fare').value) || 0);
+    const people = Math.max(1, Number($('tf-people').value) || 1);
+
+    $('tf-one').textContent = yen(fare * people);
+    $('tf-round').textContent = yen(fare * people * 2);
+    $('tf-person').textContent = yen(fare * 2);
+  }
+
+  $('tf-fare').addEventListener('input', updateCost);
+  $('tf-people').addEventListener('input', updateCost);
+  updateCost();
+
+  $('tf-cancel').onclick = () => root.innerHTML = '';
+
+  $('modal-overlay').addEventListener('click', e => {
+    if (e.target.id === 'modal-overlay') root.innerHTML = '';
+  });
+
+  $('tf-save').onclick = () => {
+    const title = $('tf-title').value.trim();
+    const departure = $('tf-departure').value.trim();
+    const destination = $('tf-destination').value.trim();
+    const startDate = $('tf-start').value;
+    const endDate = $('tf-end').value;
+    const fareText = $('tf-fare').value;
+    const peopleText = $('tf-people').value;
+    const budgetText = $('tf-budget').value;
+    const fare = Number(fareText);
+    const people = Number(peopleText);
+    const budget = Number(budgetText);
+
+    if (!title || !departure || !destination || !startDate || !endDate) {
+      showToast('必須項目をすべて入力してください');
+      return;
     }
-    if(trip){
-      Object.assign(trip, { title, departure, destination, startDate, endDate });
+
+    if (endDate < startDate) {
+      showToast('終了日は開始日以降にしてください');
+      return;
+    }
+
+    if (fareText.trim() === '' || !Number.isSafeInteger(fare) || fare < 0) {
+      showToast('片道料金を正しく入力してください');
+      return;
+    }
+
+    if (peopleText.trim() === '' ||
+        !Number.isInteger(people) || people < 1 || people > 100) {
+      showToast('人数は1〜100人で入力してください');
+      return;
+    }
+
+    if (budgetText !== '' &&
+        (!Number.isFinite(budget) || budget < 0)) {
+      showToast('予算上限を正しく入力してください');
+      return;
+    }
+
+    const transport = {
+      method: $('tf-method').value,
+      oneWayFare: fare,
+      people,
+      roundTripTotal: fare * people * 2,
+      perPersonRoundTrip: fare * 2
+    };
+
+    if (trip) {
+      Object.assign(trip, {
+        title, departure, destination, startDate, endDate,
+        transport,
+        budgetPerPerson: budgetText === '' ? 0 : budget
+      });
+
+      trip.estimate = trip.estimate || {};
+      trip.estimate.transport = transport.roundTripTotal;
     } else {
       state.trips.unshift({
-        id: uid('trip'), title, departure, destination, startDate, endDate,
-        roundingUnit: 1, roundingMethod: 'random',
-        members: [{ id: state.currentUserId, name: state.profile.name, owner:true }],
-        estimate: { transport:0, lodging:0, food:0, sightseeing:0, souvenir:0, other:0 },
+        id: uid('trip'),
+        title, departure, destination, startDate, endDate,
+        transport,
+        budgetPerPerson: budgetText === '' ? 0 : budget,
+        roundingUnit: 1,
+        roundingMethod: 'random',
+        members: [{
+          id: state.currentUserId,
+          name: state.profile.name,
+          owner: true
+        }],
+        estimate: {
+          transport: transport.roundTripTotal,
+          lodging: 0,
+          food: 0,
+          sightseeing: 0,
+          souvenir: 0,
+          other: 0
+        },
         expenses: [],
         settlements: [],
-        notifications: { settlement:true, reminder:true, deadline:true }
+        notifications: {
+          settlement: true,
+          reminder: true,
+          deadline: true
+        }
       });
     }
+
     root.innerHTML = '';
-    saveState(); render();
+    saveState();
+    render();
     showToast('保存しました');
   };
 }
