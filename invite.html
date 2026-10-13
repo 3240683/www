@@ -54,6 +54,7 @@ function renderInviteTab(trip) {
   const participants = trip.participants;
   const joinToken = getJoinToken();
 
+// 招待URLからアクセスした場合
   if (joinToken) {
     rerturn `
       <div class="card">
@@ -75,6 +76,47 @@ function renderInviteTab(trip) {
       </div>
     `;
   }
+
+  const participantHTML = participants.length
+    ?participants.map((p,i) => {
+      const name = typeof p === 'string' ? p : p.name;
+      return`
+        <div class="participant-row"
+            style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #eee">
+          <span>${escapeHTML(name)}</span>
+          <button class="btn ghost"
+          type="button"
+          data-remove-participant="${i}">
+          削除
+          </button>
+        </div>
+      `;
+    }).join('')
+  : '<p class="muted">まだ参加者はいません。</p>';
+
+  return `
+    <div class="card">
+      <div class="section-title"><h2>参加者管理</h2></div>
+
+      <p class="muted">
+        参加者を追加して、旅行に参加するメンバーを管理します。
+      </p>
+
+      <from id="participant-from">
+        <label for="paticipant-name">参加者名</label>
+      <div class="btn-row">
+        <input id="paticipant-name" type="text"
+          maxlength="30" placeholder="名前を入力" required>
+        <button class="btn accent" type="submit">追加</button>
+        </div>
+      </form>
+
+      <h3>参加者一覧 (${participants.lenngth}人) </h3>
+      <div id="participant-list">${participantHTML}</div>
+      </div>
+
+      <div class="card">
+        
 }
  /* return `
   <div class="card">
