@@ -15,24 +15,52 @@
 <script src="common.js"></script>
 <script>
 /* =========================================================
-   estimate.html: 3.4 見積もり画面
+   estimate.html: 交通費計算・見積もり画面
+   変更対象はこのファイルのみ
 ========================================================= */
-function renderEstimateTab(trip){
-  const e = trip.estimate;
-  const total = ESTIMATE_CATEGORIES.reduce((s,[k])=> s + (Number(e[k])||0), 0);
-  const perPerson = trip.members.length ? total / trip.members.length : 0;
-  const fields = ESTIMATE_CATEGORIES.map(([k,label])=>`
+
+function renderEstimateTab(trip) {
+  const e = trip.estimate || {};
+  const total = ESTIMATE_CATEGORIES.reduce(
+    (sum, [key]) => sum + (Number(e[key]) || 0), 0
+  );
+  const people = trip.members.length;
+  const budget = Number(trip.estimateBudget) || 0;
+
+  const fields = ESTIMATE_CATEGORIES.map(([key, label]) => `
     <div class="field">
-      <label>${label}</label>
-      <input type="text" inputmode="numeric" id="est-${k}" value="${Number(e[k]||0).toLocaleString('ja-JP')}" oninput="formatMoneyInput(this)">
-    </div>`).join('');
+      <label for="est-${key}">${label}</label>
+      <input type="text" inputmode="numeric" id="est-${key}"
+        value="${Number(e[key] || 0).toLocaleString('ja-JP')}"
+        oninput="formatMoneyInput(this)">
+    </div>
+  `).join('');
+
+  const mapsUrl = 'https://www.google.com/maps/dir/?api=1&origin='
+    + encodeURIComponent(trip.departure || '')
+    + '&destination='
+    + encodeURIComponent(trip.destination || '');
 
   return `
   <div class="card">
-    <div class="section-title"><h2>費用の見積もり</h2><span class="muted">出発地・目的地から交通費を概算できます</span></div>
-    <div class="grid3" style="margin-bottom:4px;">
+    <div class="section-title">
+      <h2>費用の見積もり</h2>
+      <span class="muted">交通費や旅行予算を計算できます</span>
+    </div>
+
+    <div class="flow-note" style="margin-bottom:16px;">
+      出発地：${escapeHtml(trip.departure || '未設定')}
+      → 目的地：${escapeHtml(trip.destination || '未設定')}
+      <p>実際の経路や運賃は、地図や交通機関の公式情報で確認してください。</p>
+      <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">
+        Googleマップで経路を確認 ↗
+      </a>
+    </div>
+
+    <h3>交通費の計算</h3>
+    <div class="grid3" style="margin-top:12px;">
       <div class="field">
-        <label>交通手段</label>
+        <label for="est-transport-mode">交通手段</label>
         <select id="est-transport-mode">
           <option value="train">電車</option>
           <option value="shinkansen">新幹線</option>
@@ -41,35 +69,179 @@ function renderEstimateTab(trip){
           <option value="bus">バス</option>
         </select>
       </div>
-      <div style="align-self:end; margin-bottom:14px;">
-        <button class="btn secondary sm" id="btn-calc-transport">交通費を自動計算</button>
+
+      <div class="field">
+        <label for="est-oneway-fare">片道運賃（1人分・円）</label>
+        <input type="text" inputmode="numeric" id="est-oneway-fare"
+          value="0" oninput="formatMoneyInput(this)">
+      </div>
+
+      <div class="field">
+        <label for="est-distance">車の片道距離（km）</label>
+        <input type="number" min="0.1" step="0.1"
+          id="est-distance" value="0">
+      </div>
+
+      <div class="field">
+        <label for="est-economy">車の燃費（km/L）</label>
+        <input type="number" min="0.1" step="0.1"
+          id="est-economy" value="15">
+      </div>
+
+      <div class="field">
+        <label for="est-gas-price">ガソリン単価（円/L）</label>
+        <input type="number" min="0" step="1"
+          id="est-gas-price" value="175">
+      </div>
+
+      <div class="field">
+        <label for="est-toll">往復の高速料金（円）</label>
+        <input type="text" inputmode="numeric" id="est-toll"
+          value="0" oninput="formatMoneyInput(this)">
+      </div>
+
+      <div class="field">
+        <label for="est-parking">駐車料金（合計・円）</label>
+        <input type="text" inputmode="numeric" id="est-parking"
+          value="0" oninput="formatMoneyInput(this)">
       </div>
     </div>
-    <div class="flow-note">Google Maps / Directions API を用いて「${escapeHtml(trip.departure)} → ${escapeHtml(trip.destination)}」の距離・所要時間から交通費を概算します（デモ環境のため簡易計算）。</div>
-    <div class="grid3" style="margin-top:18px;">${fields}</div>
-    <div class="kpi-row" style="margin-top:8px;">
-      <div class="kpi"><div class="kpi-label">総見積金額</div><div class="kpi-value">${yen(total)}</div></div>
-      <div class="kpi"><div class="kpi-label">一人当たり金額（${trip.members.length}人）</div><div class="kpi-value">${yen(perPerson)}</div></div>
+
+    <div class="btn-row" style="margin-top:12px;">
+      <button class="btn secondary sm" id="btn-calc-transport">
+        交通費を計算
+      </button>
     </div>
-    <div class="btn-row"><button class="btn accent" id="btn-save-estimate">見積もりを保存</button></div>
+
+    <div class="flow-note" id="est-transport-help" style="margin-top:12px;">
+      電車などは片道運賃×往復×参加人数で計算します。
+      車は往復のガソリン代・高速料金・駐車料金を計算します。
+    </div>
+
+    <h3 style="margin-top:24px;">費用内訳</h3>
+    <div class="grid3" style="margin-top:12px;">
+      ${fields}
+    </div>
+
+    <div class="field" style="margin-top:16px;max-width:360px;">
+      <label for="est-budget">旅行全体の予算（円・任意）</label>
+      <input type="text" inputmode="numeric" id="est-budget"
+        value="${budget.toLocaleString('ja-JP')}"
+        oninput="formatMoneyInput(this)">
+    </div>
+
+    <div class="kpi-row" style="margin-top:12px;">
+      <div class="kpi">
+        <div class="kpi-label">総見積金額</div>
+        <div class="kpi-value" id="est-total-preview">${yen(total)}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">一人当たり（${people}人）</div>
+        <div class="kpi-value" id="est-person-preview">
+          ${yen(people ? total / people : 0)}
+        </div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">予算残額</div>
+        <div class="kpi-value" id="est-budget-preview">
+          ${budget ? yen(budget - total) : '未設定'}
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:16px;">
+      <button class="btn accent" id="btn-save-estimate">
+        見積もりを保存
+      </button>
+    </div>
   </div>`;
 }
-function bindEstimateTab(trip){
-  document.getElementById('btn-calc-transport').onclick = ()=>{
-    // Google Directions API 相当の概算(デモ): 地名文字数などから疑似距離を算出
-    const mode = document.getElementById('est-transport-mode').value;
-    const pseudoDistance = 80 + (trip.departure.length + trip.destination.length) * 35;
-    const ratePerKm = { train:18, shinkansen:25, car:12, plane:35, bus:9 }[mode];
-    const cost = Math.round((pseudoDistance * ratePerKm) / 10) * 10 * trip.members.length;
-    document.getElementById('est-transport').value = cost.toLocaleString('ja-JP');
-    showToast('交通費を自動計算しました（概算）');
+
+function bindEstimateTab(trip) {
+  const modeSelect = document.getElementById('est-transport-mode');
+
+  function updatePreview() {
+    const total = ESTIMATE_CATEGORIES.reduce(
+      (sum, [key]) => sum + getNumberValue('est-' + key), 0
+    );
+    const people = trip.members.length;
+    const budget = getNumberValue('est-budget');
+
+    document.getElementById('est-total-preview').textContent = yen(total);
+    document.getElementById('est-person-preview').textContent =
+      yen(people ? total / people : 0);
+    document.getElementById('est-budget-preview').textContent =
+      budget ? yen(budget - total) : '未設定';
+  }
+
+  modeSelect.addEventListener('change', () => {
+    const isCar = modeSelect.value === 'car';
+    document.getElementById('est-transport-help').textContent = isCar
+      ? '車：片道距離×2÷燃費×ガソリン単価＋高速料金＋駐車料金'
+      : '公共交通機関：確認した片道運賃×2×参加人数';
+  });
+
+  document.getElementById('btn-calc-transport').onclick = () => {
+    const mode = modeSelect.value;
+    const people = Math.max(1, trip.members.length);
+    let cost = 0;
+
+    if (mode === 'car') {
+      const distance = Number(
+        document.getElementById('est-distance').value
+      );
+      const economy = Number(
+        document.getElementById('est-economy').value
+      );
+      const gasPrice = Number(
+        document.getElementById('est-gas-price').value
+      );
+      const toll = getNumberValue('est-toll');
+      const parking = getNumberValue('est-parking');
+
+      if (!Number.isFinite(distance) || distance <= 0 ||
+          !Number.isFinite(economy) || economy <= 0 ||
+          !Number.isFinite(gasPrice) || gasPrice < 0) {
+        showToast('距離・燃費・ガソリン単価を正しく入力してください');
+        return;
+      }
+
+      cost = Math.ceil((distance * 2 / economy) * gasPrice)
+        + toll + parking;
+    } else {
+      const fare = getNumberValue('est-oneway-fare');
+
+      if (fare <= 0) {
+        showToast('確認した片道運賃を入力してください');
+        return;
+      }
+
+      cost = fare * 2 * people;
+    }
+
+    document.getElementById('est-transport').value =
+      Math.round(cost).toLocaleString('ja-JP');
+
+    updatePreview();
+    showToast('交通費を計算しました。内容を確認して保存してください');
   };
-  document.getElementById('btn-save-estimate').onclick = ()=>{
-    ESTIMATE_CATEGORIES.forEach(([k])=>{
-      trip.estimate[k] = getNumberValue('est-'+k);
+
+  document.querySelectorAll('#app input').forEach(input => {
+    input.addEventListener('input', updatePreview);
+  });
+
+  document.getElementById('btn-save-estimate').onclick = () => {
+    ESTIMATE_CATEGORIES.forEach(([key]) => {
+      trip.estimate[key] = getNumberValue('est-' + key);
     });
-    rerenderPage(); showToast('見積もりを保存しました');
+
+    trip.estimateBudget = getNumberValue('est-budget');
+
+    rerenderPage();
+    showToast('見積もりを保存しました');
   };
+
+  updatePreview();
 }
 
 initTripPage('estimate.html', renderEstimateTab, bindEstimateTab);
