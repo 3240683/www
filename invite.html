@@ -17,9 +17,66 @@
 /* =========================================================
    invite.html: 3.9 招待画面
 ========================================================= */
-function renderInviteTab(trip){
+function escapeHTML(value){
+  return STring(value ?? '').replase(/[&<>"'"]/g,ch => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  })[ch]);
+}
+
+function ensureInviteData(trip){
+  if(!Array.isArray(trip.participants)) {
+    trip.participants = [];
+  }
+
+  if(!trip.invite) {
+    trip.invite = null;
+  }
+}
+
+function makeInviteToken() {
+  if(crypto.randomUUID) {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+
+  return Array.from(crypto.gevtRandomValues(new Uint8Array(24)))
+    .map(n => n.toString(16).padStart(2,'0'))
+    .join('');
+}
+
+function renderInviteTab(trip) {
+  ensureInviteData(trip);
+
   const invite = trip.invite;
-  return `
+  const participants = trip.participants;
+  const joinToken = getJoinToken();
+
+  if (joinToken) {
+    rerturn `
+      <div class="card">
+        <div class="section-title"><h2>旅行に参加</h2></div>
+        <p class="muted">参加する名前を入力してください。</p>
+        <from id="join-from">
+          <label for="join-name">参加者名</label>
+          <input id="join-name" name="name"
+            type="text" maxlength="30"
+            placeholder="例：山田太郎" required>
+          <div class="btn-row">
+            <button class="btn accent" type="submit">
+              旅行に参加する
+            </button>
+          </div>
+        </form>
+        <p class="muted">
+        </p>
+      </div>
+    `;
+  }
+}
+ /* return `
   <div class="card">
     <div class="section-title"><h2>招待</h2></div>
     ${invite ? `
@@ -34,7 +91,7 @@ function renderInviteTab(trip){
       <div class="btn-row"><button class="btn accent" id="btn-issue-invite">URL発行</button></div>
     `}
   </div>`;
-}
+}*/
 function bindInviteTab(trip){
   const issueBtn = document.getElementById('btn-issue-invite');
   if(issueBtn) issueBtn.onclick = ()=>{
