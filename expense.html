@@ -51,7 +51,13 @@ function renderExpenseTab(trip){
     <div class="section-title"><h2>実費を記録</h2></div>
     <div class="ocr-drop">
       レシート画像をアップロードすると、端末内の画像認識（無料・オフライン対応）でテキストを読み取ります。読み取った内容から、金額と日付の候補だけを自動で抽出します。一番有力な候補が入力されるので、違う場合は候補をクリックして選び直してください。<br>
-      <input type="file" id="ocr-file" accept="image/*">
+      <div class="btn-row" style="margin-top:10px;">
+        <button type="button" class="btn accent" id="btn-open-camera">📷 カメラを起動して撮影</button>
+        <button type="button" class="btn secondary" id="btn-select-image">画像を選択</button>
+      </div>
+      <input type="file" id="ocr-camera" accept="image/*" capture="environment" hidden>
+      <input type="file" id="ocr-file" accept="image/*" hidden>
+      <div class="muted" style="margin-top:6px;">スマートフォンではカメラが起動します。端末やブラウザによっては撮影方法の選択画面が表示されます。</div>
       <div id="ocr-status" class="muted" style="margin-top:6px;"></div>
       <div id="ocr-lines" style="margin-top:10px;"></div>
     </div>
@@ -391,7 +397,12 @@ function renderAllLines(lines){
 }
 
 function bindExpenseTab(trip){
-  document.getElementById('ocr-file').onchange = async (e)=>{
+  const cameraInput = document.getElementById('ocr-camera');
+  const fileInput = document.getElementById('ocr-file');
+  document.getElementById('btn-open-camera').onclick = ()=> cameraInput.click();
+  document.getElementById('btn-select-image').onclick = ()=> fileInput.click();
+
+  const handleReceiptImage = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     const statusEl = document.getElementById('ocr-status');
@@ -410,8 +421,14 @@ function bindExpenseTab(trip){
       console.error(err);
       statusEl.textContent = '読み取りに失敗しました（' + (err.message||'エラー') + '）。手入力してください。';
       showToast('OCRに失敗しました。手入力してください。');
+    } finally {
+      // 同じ画像を続けて選んでも change イベントが発火するようにする
+      e.target.value = '';
     }
   };
+  cameraInput.onchange = handleReceiptImage;
+  fileInput.onchange = handleReceiptImage;
+
   document.getElementById('btn-add-expense').onclick = ()=>{
     const category = document.getElementById('ex-category').value;
     const actual = getNumberValue('ex-amount');
