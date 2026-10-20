@@ -310,5 +310,84 @@
 .tab-btn{ text-decoration:none; display:inline-block; cursor:pointer; }
 .back-link{ cursor:pointer; }
 .topbar .who a{
+:root {
+  --paper: #F4F0E6;
+  --card: #FFFEFA;
+  --line: #DED7C6;
+  --ink-soft: #526B62;
+  --accent-soft: #F5E5DC;
+}
+
+/* 追加 */
+body {
+  line-height: 1.7;
+  letter-spacing: .02em;
+}
+
+#app { max-width: 1040px; }
+
+main { padding: 28px 22px 60px; }
+
+.topbar {
+  background: #FFFEFA;
+  border-bottom: 1px solid var(--line);
+}
+
+.card {
+  padding: 22px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px #1E3A3408;
+}
+
+.section-title {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.btn, .field input, .field select,
+.field textarea {
+  border-radius: 4px;
+}
+
+.btn {
+  transition: .2s;
+}
+
+.btn:hover { opacity: .88; }
+
+.trip-card {
+  border-radius: 5px;
+  transition: .2s;
+}
+
+.trip-card:hover {
+  box-shadow: 0 4px 14px #1E3A3412;
+  transform: translateY(-1px);
+}
+
+.kpi {
+  background: #FCFAF4;
+  border-radius: 5px;
+}
+
+.status-pill, .status-tag {
+  font-weight: 600;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 600px) {
+  main { padding: 18px 12px 40px; }
+  .card { padding: 16px 13px; }
+  .topbar { padding: 14px 12px; }
+  .kpi { min-width: 120px; }
+  .tabs { overflow-x: auto; }
+  table.data-table { min-width: 520px; }
+}
   color:var(--accent); font-size:12px; text-decoration:underline;
 }
