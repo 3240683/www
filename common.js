@@ -1,3 +1,4 @@
+commom.js
 /* =========================================================
    旅費メモ - common.js
    全ページ（index.html / estimate.html / expense.html / ...）から
