@@ -18,7 +18,7 @@
    invite.html: 3.9 招待画面
 ========================================================= */
 function escapeHTML(value){
-  return STring(value ?? '').replase(/[&<>"'"]/g,ch => ({
+  return String(value ?? '').replase(/[&<>"'"]/g,ch => ({
     '&':'&amp;',
     '<':'&lt;',
     '>':'&gt;',
