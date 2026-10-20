@@ -15,31 +15,312 @@
 <script src="common.js"></script>
 <script>
 /* =========================================================
-   notify.html: 3.10 通知設定画面
+   notify.html: 3.10 通知設定・通知履歴・ブラウザ通知
 ========================================================= */
-function renderNotifyTab(trip){
-  const n = trip.notifications;
-  return `
-  <div class="card">
-    <div class="section-title"><h2>通知設定</h2></div>
-    ${toggleRow('notify-settlement','精算通知','精算内容が更新されたときに通知します', n.settlement)}
-    ${toggleRow('notify-reminder','リマインド通知','未入力の実費や見積もりをお知らせします', n.reminder)}
-    ${toggleRow('notify-deadline','支払い期限通知','支払い期限が近づくとお知らせします', n.deadline)}
-    <div class="btn-row"><button class="btn accent" id="btn-save-notify">保存</button></div>
-  </div>`;
-}
-function bindNotifyTab(trip){
-  document.getElementById('btn-save-notify').onclick = ()=>{
+
+function ensureNotificationData(trip) {
+  if (!trip.notifications) {
     trip.notifications = {
-      settlement: document.getElementById('notify-settlement').checked,
-      reminder: document.getElementById('notify-reminder').checked,
-      deadline: document.getElementById('notify-deadline').checked,
+      settlement: true,
+      reminder: true,
+      deadline: true
     };
-    rerenderPage(); showToast('通知設定を保存しました');
-  };
+  }
+
+  if(!Array.isArray(trip.notificationHistory)){
+    trip.notificationHistory = [];
+  }
 }
 
-initTripPage('notify.html', renderNotifyTab, bindNotifyTab);
+/*
+  通知を発生させる共通関数。
+  他の画面からも呼び出せるようにする。
+*/
+function pushTripNotification(trip, type, message) {
+  ensureNotificationData(trip);
+
+  const settingMap = {
+    settlement: 'settlement',
+    reminder: 'reminder',
+    deadline: 'deadline'
+  };
+
+  const setting = settingMap[type];
+
+  if (!setting || !trip.notifications[setting]) {
+    return false;
+  }
+
+  const notification = {
+    id: (crypto.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + Math.random()),
+    type,
+    message: String(message),
+    createdAt: new Date().toISOString(),
+    read: false
+  };
+
+  trip.notificationHistory.unshift(notification);
+
+  // 履歴が増えすぎないようにする
+  trip.notificationHistory =
+    trip.notificationHistory.slice(0, 50);
+
+  if (typeof saveTrip === 'function') {
+    saveTrip(trip);
+  }
+
+  // ページ内に表示
+  if (typeof showToast === 'function') {
+    showToast(message);
+  }
+
+  // ブラウザ通知は許可されている場合のみ表示
+  if ('Notification' in window &&
+      Notification.permission === 'granted') {
+    try {
+      new Notification('旅費メモ', {
+        body: message,
+        tag: notification.id
+      });
+    } catch (error) {
+      console.warn('ブラウザ通知を表示できませんでした', error);
+    }
+  }
+
+  return true;
+}
+
+function escapeNotificationHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
+function renderNotifyTab(trip) {
+  ensureNotificationData(trip);
+
+  const n = trip.notifications;
+  const history = trip.notificationHistory;
+
+  const historyHTML = history.length
+    ? history.map(item => `
+        <div class="notification-row"
+          style="padding:12px 0;border-bottom:1px solid #eee;">
+          <strong>${escapeNotificationHTML(
+            item.type === 'settlement' ? '精算通知' :
+            item.type === 'reminder' ? 'リマインド通知' :
+            item.type === 'deadline' ? '支払い期限通知' :
+            '通知'
+          )}</strong>
+          <p>${escapeNotificationHTML(item.message)}</p>
+          <small class="muted">
+            ${escapeNotificationHTML(
+              new Date(item.createdAt).toLocaleString('ja-JP')
+            )}
+          </small>
+        </div>
+      `).join('')
+    : '<p class="muted">通知履歴はありません。</p>';
+
+  return `
+    <div class="card">
+      <div class="section-title"><h2>通知設定</h2></div>
+
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
+        <input type="checkbox" id="notify-settlement"
+          ${n.settlement ? 'checked' : ''}>
+        <span>
+          <strong>精算通知</strong><br>
+          <span class="muted">
+            精算内容が更新されたときに通知します。
+          </span>
+        </span>
+      </label>
+
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
+        <input type="checkbox" id="notify-reminder"
+          ${n.reminder ? 'checked' : ''}>
+        <span>
+          <strong>リマインド通知</strong><br>
+          <span class="muted">
+            未入力の実費や見積もりをお知らせします。
+          </span>
+        </span>
+      </label>
+
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
+        <input type="checkbox" id="notify-deadline"
+          ${n.deadline ? 'checked' : ''}>
+        <span>
+          <strong>支払い期限通知</strong><br>
+          <span class="muted">
+            支払い期限が近づいたときに通知します。
+          </span>
+        </span>
+      </label>
+
+      <div class="btn-row">
+        <button class="btn accent" id="btn-save-notify"
+          type="button">設定を保存</button>
+        <button class="btn secondary" id="btn-browser-notify"
+          type="button">ブラウザ通知を許可</button>
+      </div>
+
+      <p class="muted" id="browser-notify-status"></p>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><h2>通知のテスト</h2></div>
+      <p class="muted">
+        ボタンを押して、通知設定と表示を確認できます。
+      </p>
+
+      <div class="btn-row">
+        <button class="btn secondary"
+          data-test-notify="settlement" type="button">
+          精算通知
+        </button>
+        <button class="btn secondary"
+          data-test-notify="reminder" type="button">
+          リマインド
+        </button>
+        <button class="btn secondary"
+          data-test-notify="deadline" type="button">
+          支払い期限
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>通知履歴（${history.length}件）</h2>
+      </div>
+
+      <div id="notification-history">
+        ${historyHTML}
+      </div>
+
+      <div class="btn-row">
+        <button class="btn ghost" id="btn-clear-history"
+          type="button">履歴を削除</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindNotifyTab(trip) {
+  ensureNotificationData(trip);
+
+  // 通知設定の保存
+  document.getElementById('btn-save-notify').onclick = () => {
+    trip.notifications = {
+      settlement:
+        document.getElementById('notify-settlement').checked,
+      reminder:
+        document.getElementById('notify-reminder').checked,
+      deadline:
+        document.getElementById('notify-deadline').checked
+    };
+
+    if (typeof saveTrip === 'function') {
+      saveTrip(trip);
+    }
+
+    rerenderPage();
+    showToast('通知設定を保存しました');
+  };
+
+  // ブラウザ通知の許可
+  document.getElementById('btn-browser-notify').onclick =
+    async () => {
+      const status =
+        document.getElementById('browser-notify-status');
+
+      if (!('Notification' in window)) {
+        status.textContent =
+          'このブラウザは通知機能に対応していません。';
+        return;
+      }
+
+      if (Notification.permission === 'granted') {
+        status.textContent = 'ブラウザ通知は許可されています。';
+        return;
+      }
+
+      if (Notification.permission === 'denied') {
+        status.textContent =
+          '通知が拒否されています。ブラウザの設定から変更してください。';
+        return;
+      }
+
+      try {
+        const result = await Notification.requestPermission();
+
+        status.textContent = result === 'granted'
+          ? 'ブラウザ通知を許可しました。'
+          : 'ブラウザ通知は許可されませんでした。';
+      } catch (error) {
+        status.textContent =
+          '通知の許可を取得できませんでした。';
+      }
+    };
+
+  // 通知テスト
+  document.querySelectorAll('[data-test-notify]')
+    .forEach(button => {
+      button.onclick = () => {
+        const type = button.dataset.testNotify;
+
+        const messages = {
+          settlement: '精算内容が更新されました。',
+          reminder: '未入力の旅費がないか確認してください。',
+          deadline: '支払い期限を確認してください。'
+        };
+
+        const success = pushTripNotification(
+          trip,
+          type,
+          messages[type]
+        );
+
+        if (!success) {
+          showToast('この種類の通知は設定で無効になっています');
+          return;
+        }
+
+        rerenderPage();
+      };
+    });
+
+  // 通知履歴の削除
+  document.getElementById('btn-clear-history').onclick =
+    () => {
+      if (!confirm('通知履歴をすべて削除しますか？')) {
+        return;
+      }
+
+      trip.notificationHistory = [];
+
+      if (typeof saveTrip === 'function') {
+        saveTrip(trip);
+      }
+
+      rerenderPage();
+      showToast('通知履歴を削除しました');
+    };
+}
+
+initTripPage(
+  'notify.html',
+  renderNotifyTab,
+  bindNotifyTab
+);
 </script>
 </body>
 </html>
