@@ -16,16 +16,18 @@
 <script>
 /* =========================================================
    estimate.html: 交通費計算・見積もり画面
-   変更対象はこのファイルのみ
+   担当③の変更はこのファイル内に限定
 ========================================================= */
 
 function renderEstimateTab(trip) {
   const e = trip.estimate || {};
+  const calc = trip.transportCalc || {};
   const total = ESTIMATE_CATEGORIES.reduce(
     (sum, [key]) => sum + (Number(e[key]) || 0), 0
   );
-  const people = trip.members.length;
+  const people = Math.max(1, (trip.members || []).length);
   const budget = Number(trip.estimateBudget) || 0;
+  const mode = calc.mode || trip.transport?.method || 'train';
 
   const fields = ESTIMATE_CATEGORIES.map(([key, label]) => `
     <div class="field">
@@ -70,55 +72,54 @@ function renderEstimateTab(trip) {
         </select>
       </div>
 
-      <div class="field">
+      <div class="field" id="est-fare-field">
         <label for="est-oneway-fare">片道運賃（1人分・円）</label>
         <input type="text" inputmode="numeric" id="est-oneway-fare"
-          value="0" oninput="formatMoneyInput(this)">
+          value="${Number(calc.oneWayFare ?? trip.transport?.oneWayFare ?? 0).toLocaleString('ja-JP')}"
+          oninput="formatMoneyInput(this)">
       </div>
 
-      <div class="field">
+      <div class="field" id="est-distance-field">
         <label for="est-distance">車の片道距離（km）</label>
         <input type="number" min="0.1" step="0.1"
-          id="est-distance" value="0">
+          id="est-distance" value="${calc.distance ?? ''}" placeholder="例）120">
       </div>
 
-      <div class="field">
+      <div class="field" id="est-economy-field">
         <label for="est-economy">車の燃費（km/L）</label>
         <input type="number" min="0.1" step="0.1"
-          id="est-economy" value="15">
+          id="est-economy" value="${calc.economy ?? 15}">
       </div>
 
-      <div class="field">
+      <div class="field" id="est-gas-price-field">
         <label for="est-gas-price">ガソリン単価（円/L）</label>
         <input type="number" min="0" step="1"
-          id="est-gas-price" value="175">
+          id="est-gas-price" value="${calc.gasPrice ?? 175}">
       </div>
 
-      <div class="field">
+      <div class="field" id="est-toll-field">
         <label for="est-toll">往復の高速料金（円）</label>
         <input type="text" inputmode="numeric" id="est-toll"
-          value="0" oninput="formatMoneyInput(this)">
+          value="${Number(calc.toll || 0).toLocaleString('ja-JP')}"
+          oninput="formatMoneyInput(this)">
       </div>
 
-      <div class="field">
+      <div class="field" id="est-parking-field">
         <label for="est-parking">駐車料金（合計・円）</label>
         <input type="text" inputmode="numeric" id="est-parking"
-          value="0" oninput="formatMoneyInput(this)">
+          value="${Number(calc.parking || 0).toLocaleString('ja-JP')}"
+          oninput="formatMoneyInput(this)">
       </div>
     </div>
 
     <div class="btn-row" style="margin-top:12px;">
-      <button class="btn secondary sm" id="btn-calc-transport">
-        交通費を計算
-      </button>
+      <button class="btn secondary sm" id="btn-calc-transport">交通費を計算</button>
     </div>
 
-    <div class="flow-note" id="est-transport-help" style="margin-top:12px;">
-      電車などは片道運賃×往復×参加人数で計算します。
-      車は往復のガソリン代・高速料金・駐車料金を計算します。
-    </div>
+    <div class="flow-note" id="est-transport-help" style="margin-top:12px;" aria-live="polite"></div>
 
     <h3 style="margin-top:24px;">費用内訳</h3>
+    <p class="muted">交通費の計算結果は「交通費」に反映されます。宿泊費などは合計金額を入力してください。</p>
     <div class="grid3" style="margin-top:12px;">
       ${fields}
     </div>
@@ -137,65 +138,74 @@ function renderEstimateTab(trip) {
       </div>
       <div class="kpi">
         <div class="kpi-label">一人当たり（${people}人）</div>
-        <div class="kpi-value" id="est-person-preview">
-          ${yen(people ? total / people : 0)}
-        </div>
+        <div class="kpi-value" id="est-person-preview">${yen(total / people)}</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">予算残額</div>
-        <div class="kpi-value" id="est-budget-preview">
-          ${budget ? yen(budget - total) : '未設定'}
-        </div>
+        <div class="kpi-value" id="est-budget-preview">${budget ? yen(budget - total) : '未設定'}</div>
       </div>
     </div>
 
     <div class="btn-row" style="margin-top:16px;">
-      <button class="btn accent" id="btn-save-estimate">
-        見積もりを保存
-      </button>
+      <button class="btn accent" id="btn-save-estimate">見積もりを保存</button>
     </div>
   </div>`;
 }
 
 function bindEstimateTab(trip) {
-  const modeSelect = document.getElementById('est-transport-mode');
+  const $ = id => document.getElementById(id);
+  const modeSelect = $('est-transport-mode');
+  const carFieldIds = [
+    'est-distance-field', 'est-economy-field', 'est-gas-price-field',
+    'est-toll-field', 'est-parking-field'
+  ];
+
+  modeSelect.value = trip.transportCalc?.mode || trip.transport?.method || 'train';
 
   function updatePreview() {
     const total = ESTIMATE_CATEGORIES.reduce(
       (sum, [key]) => sum + getNumberValue('est-' + key), 0
     );
-    const people = trip.members.length;
+    const people = Math.max(1, (trip.members || []).length);
     const budget = getNumberValue('est-budget');
 
-    document.getElementById('est-total-preview').textContent = yen(total);
-    document.getElementById('est-person-preview').textContent =
-      yen(people ? total / people : 0);
-    document.getElementById('est-budget-preview').textContent =
-      budget ? yen(budget - total) : '未設定';
+    $('est-total-preview').textContent = yen(total);
+    $('est-person-preview').textContent = yen(total / people);
+    $('est-budget-preview').textContent = budget ? yen(budget - total) : '未設定';
   }
 
-  modeSelect.addEventListener('change', () => {
+  function updateModeFields() {
     const isCar = modeSelect.value === 'car';
-    document.getElementById('est-transport-help').textContent = isCar
-      ? '車：片道距離×2÷燃費×ガソリン単価＋高速料金＋駐車料金'
-      : '公共交通機関：確認した片道運賃×2×参加人数';
-  });
+    $('est-fare-field').style.display = isCar ? 'none' : '';
+    carFieldIds.forEach(id => { $(id).style.display = isCar ? '' : 'none'; });
+    $('est-transport-help').textContent = isCar
+      ? '車：片道距離×2÷燃費×ガソリン単価＋往復高速料金＋駐車料金。車の費用は車全体の合計として計算します。'
+      : '電車・新幹線・飛行機・バス：確認した片道運賃×2×参加人数で計算します。運賃は自動取得ではないため、公式情報で確認して入力してください。';
+  }
 
-  document.getElementById('btn-calc-transport').onclick = () => {
+  function saveCalcInputs() {
+    trip.transportCalc = {
+      mode: modeSelect.value,
+      oneWayFare: getNumberValue('est-oneway-fare'),
+      distance: Number($('est-distance').value) || 0,
+      economy: Number($('est-economy').value) || 15,
+      gasPrice: Number($('est-gas-price').value) || 0,
+      toll: getNumberValue('est-toll'),
+      parking: getNumberValue('est-parking')
+    };
+  }
+
+  modeSelect.addEventListener('change', updateModeFields);
+
+  $('btn-calc-transport').onclick = () => {
     const mode = modeSelect.value;
-    const people = Math.max(1, trip.members.length);
-    let cost = 0;
+    const people = Math.max(1, (trip.members || []).length);
+    let cost;
 
     if (mode === 'car') {
-      const distance = Number(
-        document.getElementById('est-distance').value
-      );
-      const economy = Number(
-        document.getElementById('est-economy').value
-      );
-      const gasPrice = Number(
-        document.getElementById('est-gas-price').value
-      );
+      const distance = Number($('est-distance').value);
+      const economy = Number($('est-economy').value);
+      const gasPrice = Number($('est-gas-price').value);
       const toll = getNumberValue('est-toll');
       const parking = getNumberValue('est-parking');
 
@@ -205,42 +215,37 @@ function bindEstimateTab(trip) {
         showToast('距離・燃費・ガソリン単価を正しく入力してください');
         return;
       }
-
-      cost = Math.ceil((distance * 2 / economy) * gasPrice)
-        + toll + parking;
+      cost = Math.ceil((distance * 2 / economy) * gasPrice) + toll + parking;
     } else {
       const fare = getNumberValue('est-oneway-fare');
-
       if (fare <= 0) {
         showToast('確認した片道運賃を入力してください');
         return;
       }
-
       cost = fare * 2 * people;
     }
 
-    document.getElementById('est-transport').value =
-      Math.round(cost).toLocaleString('ja-JP');
-
+    $('est-transport').value = Math.round(cost).toLocaleString('ja-JP');
+    saveCalcInputs();
     updatePreview();
-    showToast('交通費を計算しました。内容を確認して保存してください');
+    showToast('交通費を反映しました。内容を確認して「見積もりを保存」してください');
   };
 
   document.querySelectorAll('#app input').forEach(input => {
     input.addEventListener('input', updatePreview);
   });
 
-  document.getElementById('btn-save-estimate').onclick = () => {
+  $('btn-save-estimate').onclick = () => {
     ESTIMATE_CATEGORIES.forEach(([key]) => {
       trip.estimate[key] = getNumberValue('est-' + key);
     });
-
     trip.estimateBudget = getNumberValue('est-budget');
-
+    saveCalcInputs();
     rerenderPage();
     showToast('見積もりを保存しました');
   };
 
+  updateModeFields();
   updatePreview();
 }
 
