@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>招待｜旅費メモ</title>
+<title>招待・参加者管理｜旅費メモ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -56,11 +56,11 @@ function renderInviteTab(trip) {
 
 // 招待URLからアクセスした場合
   if (joinToken) {
-    rerturn `
+    return `
       <div class="card">
         <div class="section-title"><h2>旅行に参加</h2></div>
         <p class="muted">参加する名前を入力してください。</p>
-        <from id="join-from">
+        <form id="join-form">
           <label for="join-name">参加者名</label>
           <input id="join-name" name="name"
             type="text" maxlength="30"
@@ -78,21 +78,21 @@ function renderInviteTab(trip) {
   }
 
   const participantHTML = participants.length
-    ?participants.map((p,i) => {
-      const name = typeof p === 'string' ? p : p.name;
-      return`
-        <div class="participant-row"
-            style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #eee">
-          <span>${escapeHTML(name)}</span>
-          <button class="btn ghost"
-          type="button"
-          data-remove-participant="${i}">
-          削除
-          </button>
-        </div>
-      `;
-    }).join('')
-  : '<p class="muted">まだ参加者はいません。</p>';
+    ? participants.map((p, i) => {
+        const name = typeof p === 'string' ? p : p.name;
+        return `
+          <div class="participant-row"
+               style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #eee;">
+            <span>${escapeHTML(name)}</span>
+            <button class="btn ghost"
+              type="button"
+              data-remove-participant="${i}">
+              削除
+            </button>
+          </div>
+        `;
+      }).join('')
+    : '<p class="muted">まだ参加者はいません。</p>';
 
   return `
     <div class="card">
@@ -102,58 +102,271 @@ function renderInviteTab(trip) {
         参加者を追加して、旅行に参加するメンバーを管理します。
       </p>
 
-      <from id="participant-from">
-        <label for="paticipant-name">参加者名</label>
-      <div class="btn-row">
-        <input id="paticipant-name" type="text"
-          maxlength="30" placeholder="名前を入力" required>
-        <button class="btn accent" type="submit">追加</button>
+      <form id="participant-form">
+        <label for="participant-name">参加者名</label>
+        <div class="btn-row">
+          <input id="participant-name" type="text"
+            maxlength="30" placeholder="名前を入力" required>
+          <button class="btn accent" type="submit">追加</button>
         </div>
       </form>
 
-      <h3>参加者一覧 (${participants.lenngth}人) </h3>
+      <h3>参加者一覧（${participants.length}人）</h3>
       <div id="participant-list">${participantHTML}</div>
-      </div>
+    </div>
 
       <div class="card">
-        
-}
- /* return `
-  <div class="card">
-    <div class="section-title"><h2>招待</h2></div>
-    ${invite ? `
-      <div class="invite-box" id="invite-url">${invite.url}</div>
-      <p class="muted">有効期限：${invite.expiry} ／ 利用回数：残り ${invite.remaining} 回</p>
-      <div class="btn-row">
-        <button class="btn secondary" id="btn-copy-invite">コピー</button>
-        <button class="btn ghost" id="btn-reissue-invite">URLを再発行</button>
-      </div>
-    ` : `
-      <p class="muted">招待URLを発行して、旅行の参加者に共有しましょう。</p>
-      <div class="btn-row"><button class="btn accent" id="btn-issue-invite">URL発行</button></div>
-    `}
-  </div>`;
-}*/
-function bindInviteTab(trip){
-  const issueBtn = document.getElementById('btn-issue-invite');
-  if(issueBtn) issueBtn.onclick = ()=>{
-    const token = Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10);
-    const expiry = new Date(Date.now() + 7*24*3600*1000).toISOString().slice(0,10);
-    trip.invite = { url: `https://tabihi-memo.example.com/join/${token}`, expiry, remaining: 5 };
-    rerenderPage(); showToast('招待URLを発行しました');
-  };
-  const reissueBtn = document.getElementById('btn-reissue-invite');
-  if(reissueBtn) reissueBtn.onclick = ()=>{ trip.invite = null; rerenderPage(); };
-  const copyBtn = document.getElementById('btn-copy-invite');
-  if(copyBtn) copyBtn.onclick = async ()=>{
-    try{
-      await navigator.clipboard.writeText(trip.invite.url);
-      showToast('URLをコピーしました');
-    }catch(e){ showToast('コピーできませんでした。手動で選択してください。'); }
-  };
+      <div class="section-title"><h2>招待URL</h2></div>
+
+      ${invite ? `
+        <p class="muted">発行済みの招待URL</p>
+        <div class="invite-box" id="invite-url"
+          style="overflow-wrap:anywhere;">
+          ${escapeHTML(invite.url)}
+        </div>
+        <p class="muted">
+          有効期限：${escapeHTML(invite.expiry)}<br>
+          残り利用回数：${invite.remaining}回
+        </p>
+        <div class="btn-row">
+          <button class="btn secondary" id="btn-copy-invite"
+            type="button">コピー</button>
+          <button class="btn ghost" id="btn-reissue-invite"
+            type="button">再発行</button>
+        </div>
+      ` : `
+        <p class="muted">
+          招待URLを発行して、旅行の参加者に共有しましょう。
+        </p>
+        <div class="btn-row">
+          <button class="btn accent" id="btn-issue-invite"
+            type="button">URL発行</button>
+        </div>
+      `}
+    </div>
+  `;
 }
 
-initTripPage('invite.html', renderInviteTab, bindInviteTab);
+funvtion bindInviteTab(trip) {
+  ensureInviteData(trip);
+
+  const joinToken = getJoinToken();
+
+  //招待URLから参加する
+  const joinForm = document.getElementByld('join-form');
+
+  if (joinForm) {
+    joinForm.onsubmit = event => {
+      event.preventDefault();
+
+      const name = document.getElementById('join-name')
+        .value.trim();
+
+      const invite = trip.invite;
+
+      if (!name) {
+        showToast('参加者名を入力してください');
+        return;
+      }
+
+      if (
+        !invite ||
+        invite.token !== joinToken ||
+        new Date(invite.expiry + 'T23:59:59') < new Date() ||
+        invite.remaining <= 0
+      ) {
+        showToast('招待URLが無効か、有効期限が切れています');
+        return;
+      }
+
+      const exists = trip.participants.some(p =>
+        (typeof p === 'string' ? p : p.name) === name
+      );
+
+      if (exists) {
+        showToast('この名前はすでに登録されています');
+        return;
+      }
+
+      trip.participants.push({
+        id: (crypto.randomUUID
+          ? crypto.randomUUID()
+          : makeInviteToken()),
+        name,
+        joinedAt: new Date().toISOString()
+      });
+
+      invite.remaining--;
+
+      // common.js 側の保存処理があれば利用
+      if (typeof saveTrip === 'function') {
+        saveTrip(trip);
+      }
+
+      // 同じブラウザで参加処理後、通常画面に戻る
+      history.replaceState({}, '', location.pathname);
+
+      rerenderPage();
+      showToast('旅行に参加しました');
+    };
+
+    return;
+  }
+
+  // 参加者を手動追加する
+  const participantForm =
+    document.getElementById('participant-form');
+
+  if (participantForm) {
+    participantForm.onsubmit = event => {
+      event.preventDefault();
+
+      const input =
+        document.getElementById('participant-name');
+      const name = input.value.trim();
+
+      if (!name) {
+        showToast('参加者名を入力してください');
+        return;
+      }
+
+      const exists = trip.participants.some(p =>
+        (typeof p === 'string' ? p : p.name) === name
+      );
+
+      if (exists) {
+        showToast('この参加者は登録済みです');
+        return;
+      }
+
+      trip.participants.push({
+        id: (crypto.randomUUID
+          ? crypto.randomUUID()
+          : makeInviteToken()),
+        name,
+        joinedAt: new Date().toISOString()
+      });
+
+      if (typeof saveTrip === 'function') {
+        saveTrip(trip);
+      }
+
+      rerenderPage();
+      showToast('参加者を追加しました');
+    };
+  }
+
+  // 参加者の削除
+  document.querySelectorAll('[data-remove-participant]')
+    .forEach(button => {
+      button.onclick = () => {
+        const index = Number(
+          button.dataset.removeParticipant
+        );
+
+        if (!Number.isInteger(index) ||
+            index < 0 ||
+            index >= trip.participants.length) {
+          return;
+        }
+
+        trip.participants.splice(index, 1);
+
+        if (typeof saveTrip === 'function') {
+          saveTrip(trip);
+        }
+
+        rerenderPage();
+        showToast('参加者を削除しました');
+      };
+    });
+
+  // 招待URLの発行
+  const issueButton =
+    document.getElementById('btn-issue-invite');
+
+  if (issueButton) {
+    issueButton.onclick = () => {
+      const token = makeInviteToken();
+      const url = new URL(location.href);
+
+      url.searchParams.set('join', token);
+
+      trip.invite = {
+        token,
+        url: url.href,
+        expiry: new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString().slice(0, 10),
+        remaining: 5
+      };
+
+      if (typeof saveTrip === 'function') {
+        saveTrip(trip);
+      }
+
+      rerenderPage();
+      showToast('招待URLを発行しました');
+    };
+  }
+
+  // 招待URLの再発行
+  const reissueButton =
+    document.getElementById('btn-reissue-invite');
+
+  if (reissueButton) {
+    reissueButton.onclick = () => {
+      if (!confirm('古い招待URLを無効にして再発行しますか？')) {
+        return;
+      }
+
+      trip.invite = null;
+
+      if (typeof saveTrip === 'function') {
+        saveTrip(trip);
+      }
+
+      rerenderPage();
+      showToast('再発行の準備ができました');
+    };
+  }
+
+  // URLのコピー
+  const copyButton =
+    document.getElementById('btn-copy-invite');
+
+  if (copyButton) {
+    copyButton.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(
+          trip.invite.url
+        );
+        showToast('URLをコピーしました');
+      } catch (error) {
+        // Clipboard API が使えない場合の代替手段
+        const input = document.createElement('textarea');
+        input.value = trip.invite.url;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+
+        const copied = document.execCommand('copy');
+        input.remove();
+
+        showToast(copied
+          ? 'URLをコピーしました'
+          : 'コピーできません。URLを手動でコピーしてください');
+      }
+    };
+  }
+}
+
+initTripPage(
+  'invite.html',
+  renderInviteTab,
+  bindInviteTab
+);
 </script>
 </body>
 </html>
