@@ -15,19 +15,29 @@
 <script src="common.js"></script>
 <script>
 /* =========================================================
-   index.html: プロフィール登録（3.1） / 旅行一覧（3.2） / 旅行作成（3.3・モーダル）
+   index.html: プロフィール登録 / 旅行一覧 / 旅行作成
 ========================================================= */
-let view = 'onboarding'; // 'onboarding' | 'tripList'
+let view = 'onboarding';
 
-function render(){
+function render() {
   const app = document.getElementById('app');
-  if(view === 'onboarding'){ app.innerHTML = topbar(false) + renderOnboarding(); bindOnboarding(); return; }
-  if(view === 'tripList'){ app.innerHTML = topbar(true) + renderTripList(); bindTripList(); return; }
+  if (view === 'onboarding') {
+    app.innerHTML = topbar(false) + renderOnboarding();
+    bindOnboarding();
+    return;
+  }
+  if (view === 'tripList') {
+    app.innerHTML = topbar(true) + renderTripList();
+    bindTripList();
+  }
 }
 
-/* ---- 3.1 初期登録画面 ---- */
-function renderOnboarding(){
-  const p = state.profile || { name:'', age:'', license:false, drink:false, smoke:false };
+/* ---- プロフィール登録 ---- */
+function renderOnboarding() {
+  const p = state.profile || {
+    name: '', age: '', license: false, drink: false, smoke: false
+  };
+
   return `
   <main>
     <div class="card" style="max-width:480px;margin:20px auto;">
@@ -39,11 +49,11 @@ function renderOnboarding(){
       </div>
       <div class="field">
         <label>年齢 <span style="color:var(--accent)">*</span></label>
-        <input type="number" id="f-age" min="0" value="${p.age||''}" placeholder="例）28">
+        <input type="number" id="f-age" min="0" value="${p.age || ''}" placeholder="例）28">
       </div>
-      ${toggleRow('f-license','運転免許', '交通手段の提案に利用します', p.license)}
-      ${toggleRow('f-drink','飲酒', 'お店選びの参考にします', p.drink)}
-      ${toggleRow('f-smoke','喫煙', '宿泊先の提案に利用します', p.smoke)}
+      ${toggleRow('f-license', '運転免許', '交通手段の提案に利用します', p.license)}
+      ${toggleRow('f-drink', '飲酒', 'お店選びの参考にします', p.drink)}
+      ${toggleRow('f-smoke', '喫煙', '宿泊先の提案に利用します', p.smoke)}
       <div class="btn-row">
         <button class="btn accent" id="btn-save-profile">登録</button>
         ${state.profile ? '<button class="btn secondary" id="btn-cancel-profile">キャンセル</button>' : ''}
@@ -51,39 +61,54 @@ function renderOnboarding(){
     </div>
   </main>`;
 }
-function bindOnboarding(){
-  document.getElementById('btn-save-profile').onclick = ()=>{
+
+function bindOnboarding() {
+  document.getElementById('btn-save-profile').onclick = () => {
     const name = document.getElementById('f-name').value.trim();
-    const age = document.getElementById('f-age').value;
-    if(!name || !age){ showToast('氏名と年齢を入力してください'); return; }
+    const ageText = document.getElementById('f-age').value;
+    const age = Number(ageText);
+
+    if (!name || ageText.trim() === '' || !Number.isFinite(age) || age < 0) {
+      showToast('氏名と正しい年齢を入力してください');
+      return;
+    }
+
     state.profile = {
-      name, age: Number(age),
+      name,
+      age,
       license: document.getElementById('f-license').checked,
       drink: document.getElementById('f-drink').checked,
-      smoke: document.getElementById('f-smoke').checked,
+      smoke: document.getElementById('f-smoke').checked
     };
+
     saveState();
     view = 'tripList';
     render();
     showToast('登録しました');
   };
+
   const cancelBtn = document.getElementById('btn-cancel-profile');
-  if(cancelBtn) cancelBtn.onclick = ()=>{ view = 'tripList'; render(); };
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      view = 'tripList';
+      render();
+    };
+  }
 }
 
-/* ---- 3.2 旅行一覧画面 ---- */
-function renderTripList(){
-  const rows = state.trips.map(t=>{
+/* ---- 旅行一覧 ---- */
+function renderTripList() {
+  const rows = state.trips.map(t => {
     const st = tripStatusLabel(t);
     return `
     <div class="trip-card" data-id="${t.id}">
       <div>
-        <div style="font-weight:700; font-size:15.5px;">${escapeHtml(t.title)}</div>
+        <div style="font-weight:700;font-size:15.5px;">${escapeHtml(t.title)}</div>
         <div class="route">${escapeHtml(t.departure)} → ${escapeHtml(t.destination)}</div>
-        <div class="dates">${t.startDate||'?'} 〜 ${t.endDate||'?'}</div>
+        <div class="dates">${t.startDate || '?'} 〜 ${t.endDate || '?'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
-        <span class="status-pill ${st.done?'done':''}">${st.text}</span>
+        <span class="status-pill ${st.done ? 'done' : ''}">${st.text}</span>
         <button class="icon-btn btn-edit-trip" data-id="${t.id}" title="編集">✎</button>
         <button class="icon-btn btn-delete-trip" data-id="${t.id}" title="削除">🗑</button>
       </div>
@@ -104,38 +129,43 @@ function renderTripList(){
   </main>
   ${modalHost()}`;
 }
-function bindTripList(){
-  document.getElementById('btn-new-trip').onclick = ()=> openTripFormModal(null);
-  // プロフィール編集は通常のリンク(index.html?edit=profile)なのでJSでのbindは不要
 
-  document.querySelectorAll('.trip-card').forEach(el=>{
-    el.addEventListener('click', (e)=>{
-      if(e.target.closest('.btn-edit-trip') || e.target.closest('.btn-delete-trip')) return;
+function bindTripList() {
+  document.getElementById('btn-new-trip').onclick = () => openTripFormModal(null);
+
+  document.querySelectorAll('.trip-card').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('.btn-edit-trip') || e.target.closest('.btn-delete-trip')) return;
       state.currentTripId = el.dataset.id;
       saveState();
       location.href = 'estimate.html?trip=' + el.dataset.id;
     });
   });
-  document.querySelectorAll('.btn-edit-trip').forEach(el=>{
-    el.onclick = (e)=>{ e.stopPropagation(); openTripFormModal(el.dataset.id); };
-  });
-  document.querySelectorAll('.btn-delete-trip').forEach(el=>{
-    el.onclick = (e)=>{
+
+  document.querySelectorAll('.btn-edit-trip').forEach(el => {
+    el.onclick = e => {
       e.stopPropagation();
-      if(confirm('この旅行を削除しますか？')){
-        state.trips = state.trips.filter(t=>t.id!==el.dataset.id);
-        saveState(); render(); showToast('削除しました');
+      openTripFormModal(el.dataset.id);
+    };
+  });
+
+  document.querySelectorAll('.btn-delete-trip').forEach(el => {
+    el.onclick = e => {
+      e.stopPropagation();
+      if (confirm('この旅行を削除しますか？')) {
+        state.trips = state.trips.filter(t => t.id !== el.dataset.id);
+        saveState();
+        render();
+        showToast('削除しました');
       }
     };
   });
 }
 
-/* ---- 3.3 旅行作成画面（モーダル） ---- */
-
+/* ---- 旅行作成・編集モーダル ---- */
 function openTripFormModal(tripId) {
   const trip = tripId ? findTrip(tripId) : null;
   const root = document.getElementById('modal-root');
-
   const old = trip?.transport || {};
   const yen = n => Math.round(n).toLocaleString('ja-JP') + '円';
 
@@ -166,18 +196,15 @@ function openTripFormModal(tripId) {
         <div class="grid2">
           <div class="field">
             <label>開始日 *</label>
-            <input type="date" id="tf-start"
-              value="${trip?.startDate || ''}">
+            <input type="date" id="tf-start" value="${trip?.startDate || ''}">
           </div>
           <div class="field">
             <label>終了日 *</label>
-            <input type="date" id="tf-end"
-              value="${trip?.endDate || ''}">
+            <input type="date" id="tf-end" value="${trip?.endDate || ''}">
           </div>
         </div>
 
         <h3>交通費の計算</h3>
-
         <div class="field">
           <label>交通手段</label>
           <select id="tf-method">
@@ -192,8 +219,7 @@ function openTripFormModal(tripId) {
         <div class="field">
           <label>片道料金（1人分・円）</label>
           <input type="number" id="tf-fare" min="0" step="1"
-            placeholder="例）5000"
-            value="${old.oneWayFare ?? ''}">
+            placeholder="例）5000" value="${old.oneWayFare ?? ''}">
         </div>
 
         <div class="field">
@@ -211,8 +237,7 @@ function openTripFormModal(tripId) {
         <div class="field">
           <label>1人当たりの予算上限（円）</label>
           <input type="number" id="tf-budget" min="0"
-            value="${trip?.budgetPerPerson || ''}"
-            placeholder="例）30000">
+            value="${trip?.budgetPerPerson || ''}" placeholder="例）30000">
         </div>
 
         <div class="btn-row">
@@ -223,13 +248,11 @@ function openTripFormModal(tripId) {
     </div>`;
 
   const $ = id => document.getElementById(id);
-
   $('tf-method').value = old.method || 'train';
 
   function updateCost() {
     const fare = Math.max(0, Number($('tf-fare').value) || 0);
     const people = Math.max(1, Number($('tf-people').value) || 1);
-
     $('tf-one').textContent = yen(fare * people);
     $('tf-round').textContent = yen(fare * people * 2);
     $('tf-person').textContent = yen(fare * 2);
@@ -246,109 +269,117 @@ function openTripFormModal(tripId) {
   });
 
   $('tf-save').onclick = () => {
-    const title = $('tf-title').value.trim();
-    const departure = $('tf-departure').value.trim();
-    const destination = $('tf-destination').value.trim();
-    const startDate = $('tf-start').value;
-    const endDate = $('tf-end').value;
-    const fareText = $('tf-fare').value;
-    const peopleText = $('tf-people').value;
-    const budgetText = $('tf-budget').value;
-    const fare = Number(fareText);
-    const people = Number(peopleText);
-    const budget = Number(budgetText);
+    try {
+      const title = $('tf-title').value.trim();
+      const departure = $('tf-departure').value.trim();
+      const destination = $('tf-destination').value.trim();
+      const startDate = $('tf-start').value;
+      const endDate = $('tf-end').value;
+      const fareText = $('tf-fare').value;
+      const peopleText = $('tf-people').value;
+      const budgetText = $('tf-budget').value;
 
-    if (!title || !departure || !destination || !startDate || !endDate) {
-      showToast('必須項目をすべて入力してください');
-      return;
+      const fare = Number(fareText);
+      const people = Number(peopleText);
+      const budget = Number(budgetText);
+
+      if (!title || !departure || !destination || !startDate || !endDate) {
+        showToast('必須項目をすべて入力してください');
+        return;
+      }
+
+      if (endDate < startDate) {
+        showToast('終了日は開始日以降にしてください');
+        return;
+      }
+
+      if (fareText.trim() === '' || !Number.isFinite(fare) || fare < 0) {
+        showToast('片道料金を0以上の数値で入力してください');
+        return;
+      }
+
+      if (peopleText.trim() === '' ||
+          !Number.isInteger(people) || people < 1 || people > 100) {
+        showToast('人数は1〜100人の整数で入力してください');
+        return;
+      }
+
+      if (budgetText.trim() !== '' &&
+          (!Number.isFinite(budget) || budget < 0)) {
+        showToast('予算上限は0以上の数値で入力してください');
+        return;
+      }
+
+      const transport = {
+        method: $('tf-method').value,
+        oneWayFare: fare,
+        people,
+        roundTripTotal: fare * people * 2,
+        perPersonRoundTrip: fare * 2
+      };
+
+      if (trip) {
+        Object.assign(trip, {
+          title, departure, destination, startDate, endDate,
+          transport,
+          budgetPerPerson: budgetText.trim() === '' ? 0 : budget
+        });
+
+        trip.estimate = trip.estimate || {};
+        trip.estimate.transport = transport.roundTripTotal;
+      } else {
+        state.trips.unshift({
+          id: uid('trip'),
+          title, departure, destination, startDate, endDate,
+          transport,
+          budgetPerPerson: budgetText.trim() === '' ? 0 : budget,
+          roundingUnit: 1,
+          roundingMethod: 'random',
+          members: [{
+            id: state.currentUserId,
+            name: state.profile.name,
+            owner: true
+          }],
+          estimate: {
+            transport: transport.roundTripTotal,
+            lodging: 0,
+            food: 0,
+            sightseeing: 0,
+            souvenir: 0,
+            other: 0
+          },
+          expenses: [],
+          settlements: [],
+          notifications: {
+            settlement: true,
+            reminder: true,
+            deadline: true
+          }
+        });
+      }
+
+      saveState();
+      root.innerHTML = '';
+      render();
+      showToast('保存しました');
+    } catch (error) {
+      console.error('旅行の保存に失敗しました:', error);
+      showToast('保存に失敗しました。画面を再読み込みして、もう一度お試しください');
     }
-
-    if (endDate < startDate) {
-      showToast('終了日は開始日以降にしてください');
-      return;
-    }
-
-    if (fareText.trim() === '' || !Number.isSafeInteger(fare) || fare < 0) {
-      showToast('片道料金を正しく入力してください');
-      return;
-    }
-
-    if (peopleText.trim() === '' ||
-        !Number.isInteger(people) || people < 1 || people > 100) {
-      showToast('人数は1〜100人で入力してください');
-      return;
-    }
-
-    if (budgetText !== '' &&
-        (!Number.isFinite(budget) || budget < 0)) {
-      showToast('予算上限を正しく入力してください');
-      return;
-    }
-
-    const transport = {
-      method: $('tf-method').value,
-      oneWayFare: fare,
-      people,
-      roundTripTotal: fare * people * 2,
-      perPersonRoundTrip: fare * 2
-    };
-
-    if (trip) {
-      Object.assign(trip, {
-        title, departure, destination, startDate, endDate,
-        transport,
-        budgetPerPerson: budgetText === '' ? 0 : budget
-      });
-
-      trip.estimate = trip.estimate || {};
-      trip.estimate.transport = transport.roundTripTotal;
-    } else {
-      state.trips.unshift({
-        id: uid('trip'),
-        title, departure, destination, startDate, endDate,
-        transport,
-        budgetPerPerson: budgetText === '' ? 0 : budget,
-        roundingUnit: 1,
-        roundingMethod: 'random',
-        members: [{
-          id: state.currentUserId,
-          name: state.profile.name,
-          owner: true
-        }],
-        estimate: {
-          transport: transport.roundTripTotal,
-          lodging: 0,
-          food: 0,
-          sightseeing: 0,
-          souvenir: 0,
-          other: 0
-        },
-        expenses: [],
-        settlements: [],
-        notifications: {
-          settlement: true,
-          reminder: true,
-          deadline: true
-        }
-      });
-    }
-
-    root.innerHTML = '';
-    saveState();
-    render();
-    showToast('保存しました');
   };
 }
 
 /* ---- 起動処理 ---- */
-(async function boot(){
+(async function boot() {
   await loadState();
   const params = new URLSearchParams(location.search);
-  if(params.get('edit') === 'profile'){
+
+  if (params.get('edit') === 'profile') {
     view = 'onboarding';
   } else {
     view = state.profile ? 'tripList' : 'onboarding';
   }
+
   render();
 })();
 </script>
