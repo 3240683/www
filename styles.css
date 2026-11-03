@@ -353,3 +353,80 @@
   --shadow-hover: 0 5px 16px rgba(30, 58, 52, 0.08);
   --focus-ring: 0 0 0 3px rgba(181, 80, 47, 0.17);
 }
+
+/* ===== 視認性・強調デザイン ===== */
+
+/* カードに控えめな立体感 */
+.card {
+  box-shadow: var(--shadow-card);
+  transition: box-shadow .2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+/* セクション見出し */
+.section-title h2 {
+  border-left: 4px solid var(--accent);
+  padding-left: 10px;
+}
+
+/* 合計金額 */
+.kpi.highlight {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.kpi.highlight .kpi-label {
+  color: #D8E3DC;
+}
+
+.kpi.highlight .kpi-value {
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+/* 旅行カード */
+.trip-card {
+  transition: transform .18s ease,
+              box-shadow .18s ease;
+}
+
+.trip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* メインボタン */
+.btn.accent {
+  font-weight: 700;
+  box-shadow: 0 2px 5px rgba(181,80,47,.18);
+}
+
+/* 入力欄 */
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  box-shadow: var(--focus-ring);
+}
+
+/* 金額の強調 */
+.amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ステータス */
+.status-pill {
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+/* タブの選択状態 */
+.tab-btn.active {
+  background: var(--accent-soft);
+  border-radius: 5px 5px 0 0;
+}
