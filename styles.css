@@ -431,23 +431,22 @@
   border-radius: 5px 5px 0 0;
 }
 
-/* ===== 旅行らしい背景デザイン ===== */
+/* ===== 好きな写真を背景に設定 ===== */
 
 body {
   background-color: #F3EFE4;
 
+  /* 好きな写真のURL */
   background-image:
-    radial-gradient(
-      circle at 10% 15%,
-      rgba(199, 150, 44, 0.07),
-      transparent 28%
+    linear-gradient(
+      rgba(30, 58, 52, 0.20),
+      rgba(30, 58, 52, 0.20)
     ),
-    radial-gradient(
-      circle at 90% 80%,
-      rgba(181, 80, 47, 0.06),
-      transparent 30%
-    );
+    url("https://sozaino.site/wp-content/uploads/2024/06/okumono_tegami19.png");
 
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
   background-attachment: fixed;
 }
 
@@ -458,25 +457,25 @@ body {
 
 /* カード */
 .card {
-  background: rgba(255, 254, 250, 0.96);
+  background: rgba(255, 254, 250, 0.94);
   border: 1px solid #DED7C6;
-  box-shadow: 0 3px 12px rgba(30, 58, 52, 0.045);
+  box-shadow: 0 3px 12px rgba(30, 58, 52, 0.08);
 }
 
 /* 旅行一覧 */
 .trip-card {
-  background: #FFFEFA;
+  background: rgba(255, 254, 250, 0.94);
   border-left: 4px solid #B5502F;
 }
 
 /* 上部ヘッダー */
 .topbar {
-  background: rgba(255, 254, 250, 0.85);
+  background: rgba(255, 254, 250, 0.88);
 }
 
 /* KPI */
 .kpi {
-  background: #F8F5EC;
+  background: rgba(248, 245, 236, 0.95);
 }
 
 /* タブ */
@@ -488,5 +487,7 @@ body {
 .field input,
 .field select,
 .field textarea {
+  background: rgba(250, 248, 241, 0.96);
+}
   background: #FAF8F1;
 }
