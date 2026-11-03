@@ -430,3 +430,63 @@
   background: var(--accent-soft);
   border-radius: 5px 5px 0 0;
 }
+
+/* ===== 旅行らしい背景デザイン ===== */
+
+body {
+  background-color: #F3EFE4;
+
+  background-image:
+    radial-gradient(
+      circle at 10% 15%,
+      rgba(199, 150, 44, 0.07),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 90% 80%,
+      rgba(181, 80, 47, 0.06),
+      transparent 30%
+    );
+
+  background-attachment: fixed;
+}
+
+/* アプリ全体 */
+#app {
+  background: transparent;
+}
+
+/* カード */
+.card {
+  background: rgba(255, 254, 250, 0.96);
+  border: 1px solid #DED7C6;
+  box-shadow: 0 3px 12px rgba(30, 58, 52, 0.045);
+}
+
+/* 旅行一覧 */
+.trip-card {
+  background: #FFFEFA;
+  border-left: 4px solid #B5502F;
+}
+
+/* 上部ヘッダー */
+.topbar {
+  background: rgba(255, 254, 250, 0.85);
+}
+
+/* KPI */
+.kpi {
+  background: #F8F5EC;
+}
+
+/* タブ */
+.tabs {
+  background: transparent;
+}
+
+/* 入力欄 */
+.field input,
+.field select,
+.field textarea {
+  background: #FAF8F1;
+}
