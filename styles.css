@@ -306,17 +306,19 @@
   .icon-btn:hover{color:var(--accent);}
   .flow-note{font-size:12.5px; color:var(--ink-soft); margin-top:10px; border-left:2px solid var(--line); padding-left:10px;}
 
-/* ===== 追加: マルチページ化に伴うナビゲーション用スタイル ===== */
-.tab-btn{ text-decoration:none; display:inline-block; cursor:pointer; }
-.back-link{ cursor:pointer; }
-.topbar .who a{
-:root {
-  --paper: #F4F0E6;
-  --card: #FFFEFA;
-  --line: #DED7C6;
-  --ink-soft: #526B62;
-  --accent-soft: #F5E5DC;
+/* ===== マルチページ化に伴うナビゲーション用スタイル ===== */
+
+.tab-btn {
+  text-decoration: none;
+  display: inline-block;
+  cursor: pointer;
 }
+
+.back-link {
+  cursor: pointer;
+}
+
+/* ===== デザイン変数の上書き ===== */
 
 :root {
   --ink: #1E3A34;
@@ -350,5 +352,4 @@
   --shadow-card: 0 2px 8px rgba(30, 58, 52, 0.035);
   --shadow-hover: 0 5px 16px rgba(30, 58, 52, 0.08);
   --focus-ring: 0 0 0 3px rgba(181, 80, 47, 0.17);
-}
 }
