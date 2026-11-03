@@ -230,7 +230,7 @@ function openTripFormModal(tripId) {
         </div>
 
         <div class="field">
-          <label>片道料金（1人分・円）</label>
+          <label id="tf-fare-label">片道料金（1人分・円）</label>
           <input type="number" id="tf-fare" min="0" step="1"
             placeholder="例）5000" value="${old.oneWayFare ?? ''}">
         </div>
@@ -266,13 +266,18 @@ function openTripFormModal(tripId) {
   function updateCost() {
     const fare = Math.max(0, Number($('tf-fare').value) || 0);
     const people = Math.max(1, Number($('tf-people').value) || 1);
-    $('tf-one').textContent = yen(fare * people);
-    $('tf-round').textContent = yen(fare * people * 2);
-    $('tf-person').textContent = yen(fare * 2);
+    const isCar = $('tf-method').value === 'car';
+    const oneWayTotal = isCar ? fare : fare * people;
+    $('tf-fare-label').textContent = isCar
+      ? '片道費用（車全体の合計・円）' : '片道料金（1人分・円）';
+    $('tf-one').textContent = yen(oneWayTotal);
+    $('tf-round').textContent = yen(oneWayTotal * 2);
+    $('tf-person').textContent = yen(oneWayTotal * 2 / people);
   }
 
   $('tf-fare').addEventListener('input', updateCost);
   $('tf-people').addEventListener('input', updateCost);
+  $('tf-method').addEventListener('change', updateCost);
   updateCost();
 
   $('tf-route-search').onclick = async () => {
@@ -407,8 +412,8 @@ function openTripFormModal(tripId) {
         method: $('tf-method').value,
         oneWayFare: fare,
         people,
-        roundTripTotal: fare * people * 2,
-        perPersonRoundTrip: fare * 2
+        roundTripTotal: fare * 2 * ($('tf-method').value === 'car' ? 1 : people),
+        perPersonRoundTrip: fare * 2 / ($('tf-method').value === 'car' ? people : 1)
       };
 
       if (trip) {
@@ -417,6 +422,8 @@ function openTripFormModal(tripId) {
           transport,
           budgetPerPerson: budgetText.trim() === '' ? 0 : budget
         });
+        // 作成・編集画面の交通手段と運賃を見積もり画面にも反映する。
+        delete trip.transportCalc;
         trip.estimate = trip.estimate || {};
         trip.estimate.transport = transport.roundTripTotal;
       } else {
@@ -476,5 +483,8 @@ function openTripFormModal(tripId) {
   render();
 })();
 </script>
+</body>
+</html>
+
 </body>
 </html>
