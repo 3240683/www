@@ -1,589 +1,309 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参加者｜旅費メモ</title>
 
-<title>参加者｜旅費メモ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@500;700&display=swap" rel="stylesheet">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="common.js"></script>
 
-<link rel="stylesheet" href="styles.css">
+  <style>
+    .member-section {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+
+    .member-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .member-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+    }
+
+    .member-name {
+      font-weight: 700;
+    }
+
+    .owner-label {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #eee5d5;
+      font-size: 12px;
+    }
+
+    .member-form {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .member-form input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .member-note {
+      color: #777;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .member-disabled {
+      opacity: .65;
+    }
+
+    @media (max-width: 600px) {
+      .member-form {
+        flex-direction: column;
+      }
+
+      .member-item {
+        align-items: flex-start;
+      }
+    }
+  </style>
 </head>
 
 <body>
+  <div id="app"></div>
+  <div class="toast" id="toast"></div>
 
-<div id="app"></div>
-<div class="toast" id="toast"></div>
+  <script>
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[char]);
+    }
 
-<script src="common.js"></script>
+    function renderMembersTab(trip) {
+      if (!Array.isArray(trip.members)) {
+        trip.members = [];
+      }
 
-<script>
+      const owner = isOwner(trip, state.currentUserId);
 
-/* =========================================================
-   members.html: 3.8 参加者管理画面
-   ・招待URLから参加した人の一覧表示
-   ・参加者の追加と削除
-   ・オーナー権限の変更
-   ・端数調整の設定
-   ・オーナーのみ設定変更可能
-========================================================= */
+      const membersHTML = trip.members.map(member => `
+        <div class="member-item">
+          <div>
+            <span class="member-name">
+              ${escapeHTML(member.name)}
+            </span>
 
-
-/* ---------------------------------------------------------
-   1. データの初期化
---------------------------------------------------------- */
-
-function ensureMembersData(trip) {
-
-  if (!Array.isArray(trip.members)) {
-    trip.members = [];
-  }
-
-  if (trip.roundingUnit == null) {
-    trip.roundingUnit = 1;
-  }
-
-  if (!trip.roundingMethod) {
-    trip.roundingMethod = 'random';
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   2. オーナー確認
---------------------------------------------------------- */
-
-function canManageMembers(trip) {
-
-  return isOwner(trip, state.currentUserId);
-
-}
-
-
-/* ---------------------------------------------------------
-   3. 参加者一覧の表示
---------------------------------------------------------- */
-
-function renderMembersTab(trip) {
-
-  ensureMembersData(trip);
-
-  const iAmOwner = canManageMembers(trip);
-
-  const members = trip.members;
-
-  const rows = members.map(m => {
-
-    return `
-      <tr>
-
-        <td>
-          ${escapeHtml(m.name)}
-          ${
-            m.owner
-              ? '<span class="badge-owner">オーナー</span>'
-              : ''
-          }
-        </td>
-
-        <td>
-          ${m.owner ? 'オーナー' : '一般'}
-        </td>
-
-        <td>
-          ${
-            m.owner
-              ? '管理者'
-              : '招待URL'
-          }
-        </td>
-
-        <td>
+            ${
+              member.owner === true
+                ? '<span class="owner-label">オーナー</span>'
+                : ''
+            }
+          </div>
 
           ${
-            iAmOwner && !m.owner
+            owner && member.owner !== true
               ? `
                 <button
-                  class="btn ghost btn-make-owner"
-                  data-id="${escapeHtml(m.id)}"
-                  type="button">
-                  権限変更
-                </button>
-              `
-              : ''
-          }
-
-          ${
-            iAmOwner && !m.owner
-              ? `
-                <button
+                  type="button"
                   class="btn ghost btn-remove-member"
-                  data-id="${escapeHtml(m.id)}"
-                  type="button">
+                  data-id="${escapeHTML(member.id)}">
                   削除
                 </button>
               `
               : ''
           }
+        </div>
+      `).join('');
 
-        </td>
+      return `
+        <section class="member-section">
+          <h2>参加者一覧</h2>
 
-      </tr>
-    `;
-
-  }).join('');
-
-
-  return `
-
-    <!-- 参加者一覧 -->
-
-    <div class="card">
-
-      <div class="section-title">
-        <h2>参加者一覧</h2>
-      </div>
-
-      <p class="muted">
-        現在の参加者：${members.length}人
-      </p>
-
-      <div style="overflow-x:auto;">
-
-        <table class="data-table">
-
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th>権限</th>
-              <th>招待方法</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
+          <div class="member-list">
             ${
-              rows ||
-              '<tr><td colspan="4">参加者はいません。</td></tr>'
+              membersHTML ||
+              '<p>参加者はいません。</p>'
             }
+          </div>
+        </section>
 
-          </tbody>
+        <section class="member-section">
+          <h2>参加者を追加</h2>
 
-        </table>
+          ${
+            owner
+              ? `
+                <form id="add-member-form" class="member-form">
+                  <input
+                    type="text"
+                    id="member-name"
+                    placeholder="参加者の名前を入力"
+                    maxlength="30"
+                    required
+                  >
 
-      </div>
+                  <button type="submit" class="btn primary">
+                    追加する
+                  </button>
+                </form>
 
+                <p class="member-note">
+                  追加できるのはオーナーのみです。
+                </p>
+              `
+              : `
+                <p class="member-note">
+                  参加者の追加はオーナーのみ行えます。
+                </p>
+              `
+          }
+        </section>
 
-      ${
-        iAmOwner
-          ? `
-            <div class="btn-row">
+        <section class="member-section">
+          <h2>端数調整設定</h2>
 
-              <button
-                class="btn secondary"
-                id="btn-add-member-demo"
-                type="button">
-
-                参加者を追加
-
-              </button>
-
-            </div>
-          `
-          : `
-            <p class="muted" style="margin-top:12px;">
-              参加者の追加・削除・権限変更は
-              オーナーのみ行えます。
-            </p>
-          `
-      }
-
-      <p class="muted" style="margin-top:8px;">
-        招待URLから参加した人は、
-        この一覧に自動的に追加されます。
-      </p>
-
-    </div>
-
-
-    <!-- 端数調整の設定 -->
-
-    <div class="card">
-
-      <div class="section-title">
-        <h2>端数調整の設定</h2>
-      </div>
-
-      ${
-        iAmOwner
-          ? `
-            <p class="muted">
-              端数調整の設定を変更できます。
-            </p>
-          `
-          : `
-            <p class="muted">
-              設定を変更できるのはオーナーのみです。
-              現在の設定を表示しています。
-            </p>
-          `
-      }
-
-      <div class="grid2">
-
-        <div class="field">
-
-          <label for="round-unit">
-            精算単位
+          <label for="rounding-unit">
+            端数調整の単位
           </label>
 
-          <select id="round-unit"
-            ${iAmOwner ? '' : 'disabled'}>
+          <select id="rounding-unit" ${owner ? '' : 'disabled'}>
+            <option value="1" ${
+              (trip.roundingUnit || 1) === 1 ? 'selected' : ''
+            }>1円単位</option>
 
-            <option value="1">1円（通常）</option>
+            <option value="10" ${
+              trip.roundingUnit === 10 ? 'selected' : ''
+            }>10円単位</option>
 
-            <option value="10">10円単位</option>
-
-            <option value="100">100円単位</option>
-
-            <option value="500">500円単位</option>
-
-            <option value="1000">1000円単位</option>
-
+            <option value="100" ${
+              trip.roundingUnit === 100 ? 'selected' : ''
+            }>100円単位</option>
           </select>
 
-        </div>
-
-
-        <div class="field">
-
-          <label for="round-method">
-            端数負担方法
-          </label>
-
-          <select id="round-method"
-            ${iAmOwner ? '' : 'disabled'}>
-
-            <option value="random">
-              ランダム
-            </option>
-
-            <option value="rotation">
-              持ち回り
-            </option>
-
-            <option value="owner">
-              管理者負担
-            </option>
-
-            <option value="payer_priority">
-              立替者優先
-            </option>
-
-          </select>
-
-        </div>
-
-      </div>
-
-
-      ${
-        iAmOwner
-          ? `
-            <div class="btn-row">
-
-              <button
-                class="btn accent"
-                id="btn-save-rounding"
-                type="button">
-
-                設定を保存
-
-              </button>
-
-            </div>
-          `
-          : ''
-      }
-
-    </div>
-
-  `;
-
-}
-
-
-/* ---------------------------------------------------------
-   4. ボタンの動作
---------------------------------------------------------- */
-
-function bindMembersTab(trip) {
-
-  ensureMembersData(trip);
-
-  const iAmOwner = canManageMembers(trip);
-
-
-  /* ---------------------------------------
-     端数調整設定の初期表示
-  --------------------------------------- */
-
-  document.getElementById('round-unit').value =
-    String(trip.roundingUnit);
-
-  document.getElementById('round-method').value =
-    trip.roundingMethod;
-
-
-  /* ---------------------------------------
-     端数調整設定の保存
-     オーナーのみ
-  --------------------------------------- */
-
-  const saveButton =
-    document.getElementById('btn-save-rounding');
-
-  if (saveButton) {
-
-    saveButton.onclick = () => {
-
-      // 権限を再確認
-      if (!canManageMembers(trip)) {
-
-        showToast(
-          '設定を変更できるのはオーナーのみです'
-        );
-
-        rerenderPage();
-        return;
-
-      }
-
-      trip.roundingUnit = Number(
-        document.getElementById('round-unit').value
-      );
-
-      trip.roundingMethod =
-        document.getElementById('round-method').value;
-
-      if (typeof saveTrip === 'function') {
-        saveTrip(trip);
-      }
-
-      rerenderPage();
-
-      showToast(
-        '端数調整の設定を保存しました'
-      );
-
-    };
-
-  }
-
-
-  /* ---------------------------------------
-     参加者追加
-     オーナーのみ
-  --------------------------------------- */
-
-  const addButton =
-    document.getElementById('btn-add-member-demo');
-
-  if (addButton) {
-
-    addButton.onclick = () => {
-
-      if (!canManageMembers(trip)) {
-
-        showToast(
-          '参加者を追加できるのはオーナーのみです'
-        );
-
-        return;
-
-      }
-
-      const name = prompt(
-        '参加者の名前を入力してください'
-      );
-
-      if (!name || !name.trim()) {
-        return;
-      }
-
-      const cleanName = name.trim();
-
-      const exists = trip.members.some(m =>
-        m.name === cleanName
-      );
-
-      if (exists) {
-
-        showToast(
-          '同じ名前の参加者がすでにいます'
-        );
-
-        return;
-
-      }
-
-      trip.members.push({
-
-        id: uid('mem'),
-
-        name: cleanName,
-
-        owner: false
-
-      });
-
-      if (typeof saveTrip === 'function') {
-        saveTrip(trip);
-      }
-
-      rerenderPage();
-
-      showToast('参加者を追加しました');
-
-    };
-
-  }
-
-
-  /* ---------------------------------------
-     オーナー権限の譲渡
-     オーナーのみ
-  --------------------------------------- */
-
-  document
-    .querySelectorAll('.btn-make-owner')
-    .forEach(el => {
-
-      el.onclick = () => {
-
-        if (!canManageMembers(trip)) {
-
-          showToast(
-            '権限の変更はオーナーのみ行えます'
-          );
-
-          return;
-
-        }
-
-        const member = trip.members.find(
-          m => m.id === el.dataset.id
-        );
-
-        if (!member || member.owner) {
-          return;
-        }
-
-        openYesNoModal(
-
-          `${member.name}さんにオーナーの権限を譲渡しますか？`,
-
-          () => {
-
-            // オーナーを一人だけにする
-            trip.members.forEach(m => {
-              m.owner = false;
-            });
-
-            member.owner = true;
-
-            if (typeof saveTrip === 'function') {
-              saveTrip(trip);
-            }
-
-            rerenderPage();
-
-            showToast(
-              `${member.name}さんにオーナー権限を譲渡しました`
-            );
-
-          },
-
-          () => {
-            // キャンセル
+          ${
+            owner
+              ? ''
+              : '<p class="member-note">設定変更はオーナーのみ行えます。</p>'
+          }
+        </section>
+      `;
+    }
+
+    function bindMembersTab(trip) {
+      const owner = isOwner(trip, state.currentUserId);
+
+      // 参加者追加
+      const form = document.getElementById('add-member-form');
+
+      if (form) {
+        form.addEventListener('submit', function(event) {
+          event.preventDefault();
+
+          if (!isOwner(trip, state.currentUserId)) {
+            showToast('オーナーのみ追加できます');
+            return;
           }
 
-        );
+          const input = document.getElementById('member-name');
+          const name = input.value.trim();
 
-      };
+          if (!name) {
+            showToast('名前を入力してください');
+            return;
+          }
 
-    });
+          if (!Array.isArray(trip.members)) {
+            trip.members = [];
+          }
 
+          trip.members.push({
+            id: uid('mem'),
+            name: name,
+            owner: false
+          });
 
-  /* ---------------------------------------
-     参加者の削除
-     オーナーのみ
-  --------------------------------------- */
+          rerenderPage();
+          showToast('参加者を追加しました');
+        });
+      }
 
-  document
-    .querySelectorAll('.btn-remove-member')
-    .forEach(el => {
+      // 参加者削除
+      document.querySelectorAll('.btn-remove-member').forEach(button => {
+        button.addEventListener('click', function() {
+          if (!isOwner(trip, state.currentUserId)) {
+            showToast('オーナーのみ削除できます');
+            return;
+          }
 
-      el.onclick = () => {
+          const memberId = button.dataset.id;
 
-        if (!canManageMembers(trip)) {
+          const member = trip.members.find(m => m.id === memberId);
 
-          showToast(
-            '参加者を削除できるのはオーナーのみです'
+          if (!member) {
+            showToast('参加者が見つかりません');
+            return;
+          }
+
+          // オーナー自身は削除禁止
+          if (member.owner === true) {
+            showToast('オーナーは削除できません');
+            return;
+          }
+
+          if (!confirm(member.name + 'さんを削除しますか？')) {
+            return;
+          }
+
+          trip.members = trip.members.filter(
+            m => m.id !== memberId
           );
 
-          return;
+          rerenderPage();
+          showToast('参加者を削除しました');
+        });
+      });
 
-        }
+      // 端数調整設定
+      const roundingSelect = document.getElementById('rounding-unit');
 
-        const member = trip.members.find(
-          m => m.id === el.dataset.id
-        );
+      if (roundingSelect) {
+        roundingSelect.addEventListener('change', function() {
+          if (!isOwner(trip, state.currentUserId)) {
+            showToast('オーナーのみ変更できます');
+            return;
+          }
 
-        if (!member || member.owner) {
-          return;
-        }
+          trip.roundingUnit = Number(roundingSelect.value);
 
-        if (!confirm(
-          `${member.name}さんを削除しますか？`
-        )) {
-          return;
-        }
+          rerenderPage();
+          showToast('端数調整設定を変更しました');
+        });
+      }
+    }
 
-        trip.members = trip.members.filter(
-          m => m.id !== el.dataset.id
-        );
-
-        if (typeof saveTrip === 'function') {
-          saveTrip(trip);
-        }
-
-        rerenderPage();
-
-        showToast('参加者を削除しました');
-
-      };
-
-    });
-
-}
-
-
-/* ---------------------------------------------------------
-   5. ページ初期化
---------------------------------------------------------- */
-
-initTripPage(
-  'members.html',
-  renderMembersTab,
-  bindMembersTab
-);
-
-</script>
-
+    initTripPage(
+      'members.html',
+      renderMembersTab,
+      bindMembersTab
+    );
+  </script>
 </body>
 </html>
