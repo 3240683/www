@@ -22,9 +22,9 @@ async function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       profile: state.profile,
+      currentUserId: state.currentUserId,
       trips: state.trips,
       currentTripId: state.currentTripId,
-      roundingRotation: state.roundingRotation
     }));
   }catch(e){ console.error('保存に失敗しました', e); }
 }
@@ -36,9 +36,9 @@ async function loadState(){
     if(raw){
       const data = JSON.parse(raw);
       state.profile = data.profile || null;
+      state.currentUserId = data.currentUserId || 'me';
       state.trips = data.trips || [];
       state.currentTripId = data.currentTripId || null;
-      state.roundingRotation = data.roundingRotation || {};
     }
   }catch(e){
     console.error('読み込みに失敗しました', e);
