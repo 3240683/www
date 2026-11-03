@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -25,7 +25,7 @@ function renderEstimateTab(trip) {
   const total = ESTIMATE_CATEGORIES.reduce(
     (sum, [key]) => sum + (Number(e[key]) || 0), 0
   );
-  const people = Math.max(1, (trip.members || []).length);
+  const people = Math.max(1, Number(trip.transport?.people) || (trip.members || []).length);
   const budget = Number(trip.estimateBudget) || 0;
   const mode = calc.mode || trip.transport?.method || 'train';
 
@@ -69,6 +69,7 @@ function renderEstimateTab(trip) {
           <option value="car">車</option>
           <option value="plane">飛行機</option>
           <option value="bus">バス</option>
+          <option value="other">その他</option>
         </select>
       </div>
 
@@ -166,7 +167,7 @@ function bindEstimateTab(trip) {
     const total = ESTIMATE_CATEGORIES.reduce(
       (sum, [key]) => sum + getNumberValue('est-' + key), 0
     );
-    const people = Math.max(1, (trip.members || []).length);
+    const people = Math.max(1, Number(trip.transport?.people) || (trip.members || []).length);
     const budget = getNumberValue('est-budget');
 
     $('est-total-preview').textContent = yen(total);
@@ -199,7 +200,7 @@ function bindEstimateTab(trip) {
 
   $('btn-calc-transport').onclick = () => {
     const mode = modeSelect.value;
-    const people = Math.max(1, (trip.members || []).length);
+    const people = Math.max(1, Number(trip.transport?.people) || (trip.members || []).length);
     let cost;
 
     if (mode === 'car') {
@@ -236,6 +237,7 @@ function bindEstimateTab(trip) {
   });
 
   $('btn-save-estimate').onclick = () => {
+    trip.estimate = trip.estimate || {};
     ESTIMATE_CATEGORIES.forEach(([key]) => {
       trip.estimate[key] = getNumberValue('est-' + key);
     });
@@ -252,4 +254,4 @@ function bindEstimateTab(trip) {
 initTripPage('estimate.html', renderEstimateTab, bindEstimateTab);
 </script>
 </body>
-</html>
+</html><
