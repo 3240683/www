@@ -1,326 +1,689 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>通知設定｜旅費メモ</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>通知｜旅費メモ</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@500;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <style>
+    .notify-section {
+      margin-bottom: 24px;
+      padding: 18px;
+      background: #fff;
+      border-radius: 12px;
+    }
+
+    .notify-section h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    .notify-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .notify-form label {
+      font-weight: 700;
+    }
+
+    .notify-form select,
+    .notify-form textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .notify-form textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .notify-message {
+      padding: 14px;
+      margin-bottom: 12px;
+      border: 1px solid #e2e2e2;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+
+    .notify-message p {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 10px 0;
+    }
+
+    .notify-meta {
+      color: #777;
+      font-size: 12px;
+    }
+
+    .notify-empty {
+      color: #888;
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .notify-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .notify-actions button,
+    .notify-form button {
+      cursor: pointer;
+    }
+
+    .notify-help {
+      color: #777;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+  </style>
 </head>
+
 <body>
-<div id="app"></div>
-<div class="toast" id="toast"></div>
 
-<script src="common.js"></script>
-<script>
-/* =========================================================
-   notify.html: 3.10 通知設定・通知履歴・ブラウザ通知
-========================================================= */
+  <div id="app"></div>
+  <div class="toast" id="toast"></div>
 
-function ensureNotificationData(trip) {
-  if (!trip.notifications) {
-    trip.notifications = {
-      settlement: true,
-      reminder: true,
-      deadline: true
-    };
-  }
+  <script src="common.js"></script>
 
-  if(!Array.isArray(trip.notificationHistory)){
-    trip.notificationHistory = [];
-  }
-}
+  <script>
+    // ========================================
+    // HTMLエスケープ
+    // ========================================
 
-/*
-  通知を発生させる共通関数。
-  他の画面からも呼び出せるようにする。
-*/
-function pushTripNotification(trip, type, message) {
-  ensureNotificationData(trip);
-
-  const settingMap = {
-    settlement: 'settlement',
-    reminder: 'reminder',
-    deadline: 'deadline'
-  };
-
-  const setting = settingMap[type];
-
-  if (!setting || !trip.notifications[setting]) {
-    return false;
-  }
-
-  const notification = {
-    id: (crypto.randomUUID
-      ? crypto.randomUUID()
-      : String(Date.now()) + Math.random()),
-    type,
-    message: String(message),
-    createdAt: new Date().toISOString(),
-    read: false
-  };
-
-  trip.notificationHistory.unshift(notification);
-
-  // 履歴が増えすぎないようにする
-  trip.notificationHistory =
-    trip.notificationHistory.slice(0, 50);
-
-  if (typeof saveTrip === 'function') {
-    saveTrip(trip);
-  }
-
-  // ページ内に表示
-  if (typeof showToast === 'function') {
-    showToast(message);
-  }
-
-  // ブラウザ通知は許可されている場合のみ表示
-  if ('Notification' in window &&
-      Notification.permission === 'granted') {
-    try {
-      new Notification('旅費メモ', {
-        body: message,
-        tag: notification.id
+    function notifyEscapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, function(char) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[char];
       });
-    } catch (error) {
-      console.warn('ブラウザ通知を表示できませんでした', error);
-    }
-  }
-
-  return true;
-}
-
-function escapeNotificationHTML(value) {
-  return String(value ?? '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[ch]);
-}
-
-function renderNotifyTab(trip) {
-  ensureNotificationData(trip);
-
-  const n = trip.notifications;
-  const history = trip.notificationHistory;
-
-  const historyHTML = history.length
-    ? history.map(item => `
-        <div class="notification-row"
-          style="padding:12px 0;border-bottom:1px solid #eee;">
-          <strong>${escapeNotificationHTML(
-            item.type === 'settlement' ? '精算通知' :
-            item.type === 'reminder' ? 'リマインド通知' :
-            item.type === 'deadline' ? '支払い期限通知' :
-            '通知'
-          )}</strong>
-          <p>${escapeNotificationHTML(item.message)}</p>
-          <small class="muted">
-            ${escapeNotificationHTML(
-              new Date(item.createdAt).toLocaleString('ja-JP')
-            )}
-          </small>
-        </div>
-      `).join('')
-    : '<p class="muted">通知履歴はありません。</p>';
-
-  return `
-    <div class="card">
-      <div class="section-title"><h2>通知設定</h2></div>
-
-      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
-        <input type="checkbox" id="notify-settlement"
-          ${n.settlement ? 'checked' : ''}>
-        <span>
-          <strong>精算通知</strong><br>
-          <span class="muted">
-            精算内容が更新されたときに通知します。
-          </span>
-        </span>
-      </label>
-
-      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
-        <input type="checkbox" id="notify-reminder"
-          ${n.reminder ? 'checked' : ''}>
-        <span>
-          <strong>リマインド通知</strong><br>
-          <span class="muted">
-            未入力の実費や見積もりをお知らせします。
-          </span>
-        </span>
-      </label>
-
-      <label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0;">
-        <input type="checkbox" id="notify-deadline"
-          ${n.deadline ? 'checked' : ''}>
-        <span>
-          <strong>支払い期限通知</strong><br>
-          <span class="muted">
-            支払い期限が近づいたときに通知します。
-          </span>
-        </span>
-      </label>
-
-      <div class="btn-row">
-        <button class="btn accent" id="btn-save-notify"
-          type="button">設定を保存</button>
-        <button class="btn secondary" id="btn-browser-notify"
-          type="button">ブラウザ通知を許可</button>
-      </div>
-
-      <p class="muted" id="browser-notify-status"></p>
-    </div>
-
-    <div class="card">
-      <div class="section-title"><h2>通知のテスト</h2></div>
-      <p class="muted">
-        ボタンを押して、通知設定と表示を確認できます。
-      </p>
-
-      <div class="btn-row">
-        <button class="btn secondary"
-          data-test-notify="settlement" type="button">
-          精算通知
-        </button>
-        <button class="btn secondary"
-          data-test-notify="reminder" type="button">
-          リマインド
-        </button>
-        <button class="btn secondary"
-          data-test-notify="deadline" type="button">
-          支払い期限
-        </button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="section-title">
-        <h2>通知履歴（${history.length}件）</h2>
-      </div>
-
-      <div id="notification-history">
-        ${historyHTML}
-      </div>
-
-      <div class="btn-row">
-        <button class="btn ghost" id="btn-clear-history"
-          type="button">履歴を削除</button>
-      </div>
-    </div>
-  `;
-}
-
-function bindNotifyTab(trip) {
-  ensureNotificationData(trip);
-
-  // 通知設定の保存
-  document.getElementById('btn-save-notify').onclick = () => {
-    trip.notifications = {
-      settlement:
-        document.getElementById('notify-settlement').checked,
-      reminder:
-        document.getElementById('notify-reminder').checked,
-      deadline:
-        document.getElementById('notify-deadline').checked
-    };
-
-    if (typeof saveTrip === 'function') {
-      saveTrip(trip);
     }
 
-    rerenderPage();
-    showToast('通知設定を保存しました');
-  };
 
-  // ブラウザ通知の許可
-  document.getElementById('btn-browser-notify').onclick =
-    async () => {
-      const status =
-        document.getElementById('browser-notify-status');
+    // ========================================
+    // 通知データの初期化
+    // ========================================
 
-      if (!('Notification' in window)) {
-        status.textContent =
-          'このブラウザは通知機能に対応していません。';
-        return;
-      }
+    function ensureNotificationData(trip) {
 
-      if (Notification.permission === 'granted') {
-        status.textContent = 'ブラウザ通知は許可されています。';
-        return;
-      }
-
-      if (Notification.permission === 'denied') {
-        status.textContent =
-          '通知が拒否されています。ブラウザの設定から変更してください。';
-        return;
-      }
-
-      try {
-        const result = await Notification.requestPermission();
-
-        status.textContent = result === 'granted'
-          ? 'ブラウザ通知を許可しました。'
-          : 'ブラウザ通知は許可されませんでした。';
-      } catch (error) {
-        status.textContent =
-          '通知の許可を取得できませんでした。';
-      }
-    };
-
-  // 通知テスト
-  document.querySelectorAll('[data-test-notify]')
-    .forEach(button => {
-      button.onclick = () => {
-        const type = button.dataset.testNotify;
-
-        const messages = {
-          settlement: '精算内容が更新されました。',
-          reminder: '未入力の旅費がないか確認してください。',
-          deadline: '支払い期限を確認してください。'
+      if (!trip.notifications) {
+        trip.notifications = {
+          settlement: true,
+          reminder: true,
+          deadline: true,
+          message: true
         };
+      }
 
-        const success = pushTripNotification(
+      if (trip.notifications.message === undefined) {
+        trip.notifications.message = true;
+      }
+
+      if (!Array.isArray(trip.notificationHistory)) {
+        trip.notificationHistory = [];
+      }
+
+    }
+
+
+    // ========================================
+    // トースト表示
+    // ========================================
+
+    function showNotifyToast(message) {
+
+      const toast = document.getElementById('toast');
+
+      if (!toast) {
+        alert(message);
+        return;
+      }
+
+      toast.textContent = message;
+      toast.classList.add('show');
+
+      setTimeout(function() {
+        toast.classList.remove('show');
+      }, 2500);
+
+    }
+
+
+    // ========================================
+    // 通常の通知を追加
+    // ========================================
+
+    function pushTripNotification(trip, type, message) {
+
+      ensureNotificationData(trip);
+
+      if (trip.notifications[type] === false) {
+        return;
+      }
+
+      trip.notificationHistory.unshift({
+        id: 'notification_' + Date.now(),
+        type: type,
+        message: message,
+        createdAt: new Date().toISOString(),
+        senderId: state.currentUserId,
+        recipientId: null
+      });
+
+      saveState();
+
+      showNotifyToast('通知を追加しました');
+
+    }
+
+
+    // ========================================
+    // メッセージ通知を送信
+    // ========================================
+
+    function sendMessageNotification(trip, recipientId, message) {
+
+      ensureNotificationData(trip);
+
+      if (!trip.notifications.message) {
+        showNotifyToast('メッセージ通知が設定でOFFになっています');
+        return false;
+      }
+
+      const text = message.trim();
+
+      if (!recipientId) {
+        showNotifyToast('送信相手を選択してください');
+        return false;
+      }
+
+      if (!text) {
+        showNotifyToast('メッセージを入力してください');
+        return false;
+      }
+
+      if (text.length > 500) {
+        showNotifyToast('メッセージは500文字以内で入力してください');
+        return false;
+      }
+
+      const senderId = state.currentUserId;
+
+      trip.notificationHistory.unshift({
+        id: 'message_' + Date.now() + '_' +
+          Math.random().toString(36).slice(2, 7),
+
+        type: 'message',
+        message: text,
+        senderId: senderId,
+        recipientId: recipientId,
+        createdAt: new Date().toISOString()
+      });
+
+      saveState();
+
+      showNotifyToast('メッセージを保存しました');
+
+      return true;
+
+    }
+
+
+    // ========================================
+    // 日時表示
+    // ========================================
+
+    function formatNotifyDate(value) {
+
+      if (!value) return '';
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+
+      return date.toLocaleString('ja-JP');
+
+    }
+
+
+    // ========================================
+    // 参加者名を取得
+    // ========================================
+
+    function getNotifyMemberName(trip, userId) {
+
+      const member = (trip.members || []).find(function(item) {
+        return item.id === userId;
+      });
+
+      return member ? member.name : '不明な参加者';
+
+    }
+
+
+    // ========================================
+    // 通知画面を表示
+    // ========================================
+
+    function renderNotifyTab(trip) {
+
+      ensureNotificationData(trip);
+
+      const members = trip.members || [];
+
+      const memberOptions = members.map(function(member) {
+
+        return `
+          <option value="${notifyEscapeHTML(member.id)}">
+            ${notifyEscapeHTML(member.name)}
+          </option>
+        `;
+
+      }).join('');
+
+
+      // 通知履歴
+      const historyHTML = trip.notificationHistory.map(function(item) {
+
+        const senderName = getNotifyMemberName(
           trip,
-          type,
-          messages[type]
+          item.senderId
         );
 
-        if (!success) {
-          showToast('この種類の通知は設定で無効になっています');
-          return;
-        }
+        const recipientName = item.recipientId
+          ? getNotifyMemberName(trip, item.recipientId)
+          : '全員';
 
-        rerenderPage();
-      };
-    });
+        const isMessage = item.type === 'message';
 
-  // 通知履歴の削除
-  document.getElementById('btn-clear-history').onclick =
-    () => {
-      if (!confirm('通知履歴をすべて削除しますか？')) {
-        return;
+        return `
+          <div class="notify-message">
+
+            <div class="notify-meta">
+              ${isMessage ? 'メッセージ' : 'お知らせ'}
+              ／
+              ${notifyEscapeHTML(formatNotifyDate(item.createdAt))}
+            </div>
+
+            ${
+              isMessage
+                ? `
+                  <div class="notify-meta">
+                    送信者：${notifyEscapeHTML(senderName)}
+                    ／
+                    宛先：${notifyEscapeHTML(recipientName)}
+                  </div>
+                `
+                : ''
+            }
+
+            <p>${notifyEscapeHTML(item.message)}</p>
+
+          </div>
+        `;
+
+      }).join('');
+
+
+      return `
+
+        <!-- メッセージ送信 -->
+
+        <section class="notify-section">
+
+          <h2>メッセージを送る</h2>
+
+          <p class="notify-help">
+            参加者を選択してメッセージを送信できます。
+            送信した内容は、この端末の通知履歴に保存されます。
+          </p>
+
+          <div class="notify-form">
+
+            <label for="messageRecipient">
+              送信相手
+            </label>
+
+            <select id="messageRecipient">
+
+              <option value="">
+                送信相手を選択してください
+              </option>
+
+              ${memberOptions}
+
+            </select>
+
+
+            <label for="messageText">
+              メッセージ
+            </label>
+
+            <textarea
+              id="messageText"
+              maxlength="500"
+              placeholder="例：旅費の入力をお願いします。"
+            ></textarea>
+
+
+            <button
+              type="button"
+              id="sendMessageBtn"
+              class="btn"
+            >
+              メッセージを送信
+            </button>
+
+          </div>
+
+        </section>
+
+
+        <!-- 通知設定 -->
+
+        <section class="notify-section">
+
+          <h2>通知設定</h2>
+
+          <div class="notify-form">
+
+            <label>
+              <input
+                type="checkbox"
+                id="messageNotificationSetting"
+                ${trip.notifications.message ? 'checked' : ''}
+              >
+              メッセージ通知
+            </label>
+
+
+            <label>
+              <input
+                type="checkbox"
+                id="settlementNotificationSetting"
+                ${trip.notifications.settlement ? 'checked' : ''}
+              >
+              精算通知
+            </label>
+
+
+            <label>
+              <input
+                type="checkbox"
+                id="reminderNotificationSetting"
+                ${trip.notifications.reminder ? 'checked' : ''}
+              >
+              入力リマインダー
+            </label>
+
+
+            <label>
+              <input
+                type="checkbox"
+                id="deadlineNotificationSetting"
+                ${trip.notifications.deadline ? 'checked' : ''}
+              >
+              支払い期限通知
+            </label>
+
+
+            <button
+              type="button"
+              id="saveNotifySettingBtn"
+              class="btn"
+            >
+              設定を保存
+            </button>
+
+          </div>
+
+        </section>
+
+
+        <!-- 通知履歴 -->
+
+        <section class="notify-section">
+
+          <h2>通知履歴</h2>
+
+          <div class="notify-actions">
+
+            <button
+              type="button"
+              id="clearNotifyHistoryBtn"
+              class="btn"
+            >
+              履歴を削除
+            </button>
+
+          </div>
+
+
+          <div style="margin-top: 15px;">
+
+            ${
+              historyHTML ||
+              '<div class="notify-empty">通知履歴はありません。</div>'
+            }
+
+          </div>
+
+        </section>
+
+
+        <!-- ブラウザ通知 -->
+
+        <section class="notify-section">
+
+          <h2>ブラウザ通知</h2>
+
+          <p class="notify-help">
+            ブラウザ通知は、この端末でブラウザ通知に対応している場合に利用できます。
+            相手の端末へ通知を送信する機能ではありません。
+          </p>
+
+          <button
+            type="button"
+            id="requestBrowserNotifyBtn"
+            class="btn"
+          >
+            ブラウザ通知を許可する
+          </button>
+
+        </section>
+
+      `;
+
+    }
+
+
+    // ========================================
+    // 通知画面のイベント設定
+    // ========================================
+
+    function bindNotifyTab(trip) {
+
+      ensureNotificationData(trip);
+
+
+      // メッセージ送信
+      const sendButton = document.getElementById(
+        'sendMessageBtn'
+      );
+
+      if (sendButton) {
+
+        sendButton.addEventListener('click', async function() {
+
+          const recipientId =
+            document.getElementById(
+              'messageRecipient'
+            ).value;
+
+          const message =
+            document.getElementById(
+              'messageText'
+            ).value;
+
+          const success = sendMessageNotification(
+            trip,
+            recipientId,
+            message
+          );
+
+          if (success) {
+
+            await saveState();
+
+            renderTripPage();
+
+          }
+
+        });
+
       }
 
-      trip.notificationHistory = [];
 
-      if (typeof saveTrip === 'function') {
-        saveTrip(trip);
+      // 通知設定保存
+      const saveButton = document.getElementById(
+        'saveNotifySettingBtn'
+      );
+
+      if (saveButton) {
+
+        saveButton.addEventListener('click', async function() {
+
+          trip.notifications.message =
+            document.getElementById(
+              'messageNotificationSetting'
+            ).checked;
+
+          trip.notifications.settlement =
+            document.getElementById(
+              'settlementNotificationSetting'
+            ).checked;
+
+          trip.notifications.reminder =
+            document.getElementById(
+              'reminderNotificationSetting'
+            ).checked;
+
+          trip.notifications.deadline =
+            document.getElementById(
+              'deadlineNotificationSetting'
+            ).checked;
+
+          await saveState();
+
+          showNotifyToast('通知設定を保存しました');
+
+          renderTripPage();
+
+        });
+
       }
 
-      rerenderPage();
-      showToast('通知履歴を削除しました');
-    };
-}
 
-initTripPage(
-  'notify.html',
-  renderNotifyTab,
-  bindNotifyTab
-);
-</script>
+      // 通知履歴削除
+      const clearButton = document.getElementById(
+        'clearNotifyHistoryBtn'
+      );
+
+      if (clearButton) {
+
+        clearButton.addEventListener('click', async function() {
+
+          if (!confirm('通知履歴をすべて削除しますか？')) {
+            return;
+          }
+
+          trip.notificationHistory = [];
+
+          await saveState();
+
+          showNotifyToast('通知履歴を削除しました');
+
+          renderTripPage();
+
+        });
+
+      }
+
+
+      // ブラウザ通知許可
+      const browserButton = document.getElementById(
+        'requestBrowserNotifyBtn'
+      );
+
+      if (browserButton) {
+
+        browserButton.addEventListener('click', async function() {
+
+          if (!('Notification' in window)) {
+
+            showNotifyToast(
+              'このブラウザは通知に対応していません'
+            );
+
+            return;
+
+          }
+
+          const permission =
+            await Notification.requestPermission();
+
+          if (permission === 'granted') {
+
+            showNotifyToast('ブラウザ通知を許可しました');
+
+          } else {
+
+            showNotifyToast(
+              'ブラウザ通知は許可されませんでした'
+            );
+
+          }
+
+        });
+
+      }
+
+    }
+
+
+    // ========================================
+    // 通知画面の初期化
+    // ========================================
+
+    initTripPage(
+      'notify.html',
+      renderNotifyTab,
+      bindNotifyTab
+    );
+
+  </script>
+
 </body>
 </html>
