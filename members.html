@@ -3,307 +3,537 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>参加者｜旅費メモ</title>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@500;700&display=swap" rel="stylesheet">
-
+  <title>参加者管理｜旅費メモ</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="common.js"></script>
 
   <style>
-    .member-section {
-      background: #fff;
+    .members-section {
+      background: white;
+      border: 1px solid #e5e5e5;
       border-radius: 12px;
       padding: 20px;
-      margin: 20px 0;
+      margin: 18px 0;
     }
 
-    .member-list {
+    .member-card {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .member-item {
-      display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
       gap: 12px;
-      padding: 14px;
-      border: 1px solid #e5e5e5;
-      border-radius: 10px;
+      padding: 15px 0;
+      border-bottom: 1px solid #eee;
     }
 
-    .member-name {
-      font-weight: 700;
+    .member-card:last-child {
+      border-bottom: none;
     }
 
-    .owner-label {
-      display: inline-block;
-      margin-left: 8px;
-      padding: 3px 8px;
-      border-radius: 20px;
-      background: #eee5d5;
-      font-size: 12px;
-    }
-
-    .member-form {
-      display: flex;
-      gap: 10px;
-      margin-top: 15px;
-    }
-
-    .member-form input {
-      flex: 1;
+    .member-info {
       min-width: 0;
     }
 
-    .member-note {
+    .member-name {
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .member-detail {
       color: #777;
       font-size: 13px;
-      margin-top: 10px;
+      margin-top: 5px;
     }
 
-    .member-disabled {
-      opacity: .65;
+    .owner-badge {
+      display: inline-block;
+      background: #e8f3ff;
+      color: #27639a;
+      border-radius: 20px;
+      padding: 4px 9px;
+      font-size: 12px;
+      margin-left: 5px;
     }
 
-    @media (max-width: 600px) {
-      .member-form {
-        flex-direction: column;
-      }
+    .member-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
 
-      .member-item {
-        align-items: flex-start;
-      }
+    .transfer-section {
+      background: #f7f9fc;
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 20px;
+    }
+
+    .transfer-section select {
+      width: 100%;
+      padding: 11px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 7px;
+    }
+
+    .member-empty {
+      text-align: center;
+      color: #888;
+      padding: 25px 0;
+    }
+
+    .error-message {
+      color: #c0392b;
+      font-size: 13px;
     }
   </style>
 </head>
 
 <body>
-  <div id="app"></div>
-  <div class="toast" id="toast"></div>
 
-  <script>
-    function escapeHTML(value) {
-      return String(value ?? '').replace(/[&<>"']/g, char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      })[char]);
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase.js"></script>
+<script src="common.js"></script>
+
+<script>
+
+// ========================================
+// オーナー判定
+// ========================================
+
+function isTripOwner(member) {
+  return member.role === 'owner' || member.owner === true;
+}
+
+
+// ========================================
+// 参加者一覧
+// ========================================
+
+function renderMembersTab(trip) {
+
+  const members = trip.members || [];
+
+  const owner = members.some(m =>
+    m.id === state.currentUserId && isTripOwner(m)
+  );
+
+  const memberHtml = members.map(member => {
+
+    const tags = [];
+
+    if (member.role && member.role !== 'owner') {
+      tags.push(member.role);
     }
 
-    function renderMembersTab(trip) {
-      if (!Array.isArray(trip.members)) {
-        trip.members = [];
-      }
+    if (member.drink) tags.push('飲酒');
+    if (member.exempt) tags.push('今回免除');
 
-      const owner = isOwner(trip, state.currentUserId);
+    const isMe = member.id === state.currentUserId;
 
-      const membersHTML = trip.members.map(member => `
-        <div class="member-item">
-          <div>
-            <span class="member-name">
-              ${escapeHTML(member.name)}
-            </span>
+    return `
+      <div class="member-card">
 
-            ${
-              member.owner === true
-                ? '<span class="owner-label">オーナー</span>'
-                : ''
+        <div class="member-info">
+
+          <div class="member-name">
+            ${escapeHtml(member.name)}
+
+            ${isTripOwner(member)
+              ? '<span class="owner-badge">オーナー</span>'
+              : ''
+            }
+
+            ${isMe
+              ? '<span class="owner-badge">自分</span>'
+              : ''
             }
           </div>
 
+          <div class="member-detail">
+            ${tags.length
+              ? escapeHtml(tags.join('・'))
+              : '役割などの設定なし'
+            }
+          </div>
+
+        </div>
+
+        <div class="member-actions">
+
           ${
-            owner && member.owner !== true
+            owner && !isTripOwner(member)
               ? `
                 <button
-                  type="button"
-                  class="btn ghost btn-remove-member"
-                  data-id="${escapeHTML(member.id)}">
+                  class="btn secondary transfer-member"
+                  data-member-id="${escapeHtml(member.id)}">
+                  オーナーにする
+                </button>
+
+                <button
+                  class="btn secondary delete-member"
+                  data-member-id="${escapeHtml(member.id)}">
                   削除
                 </button>
               `
               : ''
           }
+
         </div>
-      `).join('');
 
-      return `
-        <section class="member-section">
-          <h2>参加者一覧</h2>
+      </div>
+    `;
 
-          <div class="member-list">
-            ${
-              membersHTML ||
-              '<p>参加者はいません。</p>'
-            }
-          </div>
-        </section>
+  }).join('');
 
-        <section class="member-section">
-          <h2>参加者を追加</h2>
+  return `
+    <section class="members-section">
 
-          ${
-            owner
-              ? `
-                <form id="add-member-form" class="member-form">
-                  <input
-                    type="text"
-                    id="member-name"
-                    placeholder="参加者の名前を入力"
-                    maxlength="30"
-                    required
-                  >
+      <h3>参加者一覧</h3>
 
-                  <button type="submit" class="btn primary">
-                    追加する
-                  </button>
-                </form>
+      <p>
+        現在の参加者：
+        <strong>${members.length}人</strong>
+      </p>
 
-                <p class="member-note">
-                  追加できるのはオーナーのみです。
-                </p>
-              `
-              : `
-                <p class="member-note">
-                  参加者の追加はオーナーのみ行えます。
-                </p>
-              `
-          }
-        </section>
+      <div id="members-list">
+        ${
+          members.length
+            ? memberHtml
+            : '<div class="member-empty">参加者はいません。</div>'
+        }
+      </div>
 
-        <section class="member-section">
-          <h2>端数調整設定</h2>
+      ${
+        owner && members.filter(m => !isTripOwner(m)).length > 0
+          ? `
+            <div class="transfer-section">
 
-          <label for="rounding-unit">
-            端数調整の単位
-          </label>
+              <h3>オーナー権限の引き継ぎ</h3>
 
-          <select id="rounding-unit" ${owner ? '' : 'disabled'}>
-            <option value="1" ${
-              (trip.roundingUnit || 1) === 1 ? 'selected' : ''
-            }>1円単位</option>
+              <p>
+                他の参加者にオーナー権限を引き継ぐことができます。
+                引き継ぎ後、あなたは一般参加者になります。
+              </p>
 
-            <option value="10" ${
-              trip.roundingUnit === 10 ? 'selected' : ''
-            }>10円単位</option>
+              <select id="new-owner-select">
+                <option value="">引き継ぐ相手を選択</option>
 
-            <option value="100" ${
-              trip.roundingUnit === 100 ? 'selected' : ''
-            }>100円単位</option>
-          </select>
+                ${
+                  members
+                    .filter(m => !isTripOwner(m))
+                    .map(m => `
+                      <option value="${escapeHtml(m.id)}">
+                        ${escapeHtml(m.name)}
+                      </option>
+                    `).join('')
+                }
 
-          ${
-            owner
-              ? ''
-              : '<p class="member-note">設定変更はオーナーのみ行えます。</p>'
-          }
-        </section>
-      `;
-    }
+              </select>
 
-    function bindMembersTab(trip) {
-      const owner = isOwner(trip, state.currentUserId);
+              <button
+                class="btn accent"
+                id="transfer-owner">
+                オーナー権限を引き継ぐ
+              </button>
 
-      // 参加者追加
-      const form = document.getElementById('add-member-form');
+              <p class="error-message" id="transfer-error"></p>
 
-      if (form) {
-        form.addEventListener('submit', function(event) {
-          event.preventDefault();
-
-          if (!isOwner(trip, state.currentUserId)) {
-            showToast('オーナーのみ追加できます');
-            return;
-          }
-
-          const input = document.getElementById('member-name');
-          const name = input.value.trim();
-
-          if (!name) {
-            showToast('名前を入力してください');
-            return;
-          }
-
-          if (!Array.isArray(trip.members)) {
-            trip.members = [];
-          }
-
-          trip.members.push({
-            id: uid('mem'),
-            name: name,
-            owner: false
-          });
-
-          rerenderPage();
-          showToast('参加者を追加しました');
-        });
+            </div>
+          `
+          : ''
       }
 
-      // 参加者削除
-      document.querySelectorAll('.btn-remove-member').forEach(button => {
-        button.addEventListener('click', function() {
-          if (!isOwner(trip, state.currentUserId)) {
-            showToast('オーナーのみ削除できます');
-            return;
-          }
+    </section>
 
-          const memberId = button.dataset.id;
+    <section class="members-section">
 
-          const member = trip.members.find(m => m.id === memberId);
+      <h3>参加者を追加</h3>
 
-          if (!member) {
-            showToast('参加者が見つかりません');
-            return;
-          }
+      <p>
+        新しい参加者を追加する場合は、
+        招待URLを発行してください。
+      </p>
 
-          // オーナー自身は削除禁止
-          if (member.owner === true) {
-            showToast('オーナーは削除できません');
-            return;
-          }
+      <a
+        class="btn accent"
+        href="invite.html?trip=${encodeURIComponent(trip.id)}">
+        招待画面へ
+      </a>
 
-          if (!confirm(member.name + 'さんを削除しますか？')) {
-            return;
-          }
+    </section>
+  `;
+}
 
-          trip.members = trip.members.filter(
-            m => m.id !== memberId
-          );
 
-          rerenderPage();
-          showToast('参加者を削除しました');
-        });
-      });
+// ========================================
+// オーナー権限の引き継ぎ
+// ========================================
 
-      // 端数調整設定
-      const roundingSelect = document.getElementById('rounding-unit');
+async function transferOwner(trip) {
 
-      if (roundingSelect) {
-        roundingSelect.addEventListener('change', function() {
-          if (!isOwner(trip, state.currentUserId)) {
-            showToast('オーナーのみ変更できます');
-            return;
-          }
+  const select =
+    document.getElementById('new-owner-select');
 
-          trip.roundingUnit = Number(roundingSelect.value);
+  const errorArea =
+    document.getElementById('transfer-error');
 
-          rerenderPage();
-          showToast('端数調整設定を変更しました');
-        });
-      }
+  if (!select || !select.value) {
+    if (errorArea) {
+      errorArea.textContent = '引き継ぐ相手を選択してください。';
+    }
+    return;
+  }
+
+  const newOwnerId = select.value;
+
+  const newOwner = trip.members.find(
+    m => m.id === newOwnerId
+  );
+
+  if (!newOwner) return;
+
+  if (!confirm(
+    newOwner.name +
+    'さんにオーナー権限を引き継ぎますか？\n' +
+    'この操作後、あなたは一般参加者になります。'
+  )) {
+    return;
+  }
+
+  try {
+
+    const user = await ensureSupabaseUser();
+
+    // 現在のログインユーザーと一致するか確認
+    if (user.id !== state.currentUserId) {
+      throw new Error('ログインユーザーが一致しません。');
     }
 
-    initTripPage(
-      'members.html',
-      renderMembersTab,
-      bindMembersTab
+    // Supabase側で権限を変更
+    const { error } = await supabaseClient.rpc(
+      'transfer_trip_owner',
+      {
+        p_trip_id: trip.id,
+        p_new_owner_id: newOwnerId
+      }
     );
-  </script>
+
+    if (error) throw error;
+
+    showToast('オーナー権限を変更しました');
+
+    // 参加者情報を再取得
+    await loadTripMembers(trip);
+
+    // 画面を再描画
+    renderTripPage();
+
+  } catch (error) {
+
+    console.error(error);
+
+    if (errorArea) {
+      errorArea.textContent =
+        error.message || '引き継ぎに失敗しました。';
+    }
+
+    showToast('オーナー変更に失敗しました');
+
+  }
+}
+
+
+// ========================================
+// 参加者削除
+// ========================================
+
+async function deleteMember(trip, memberId) {
+
+  const member = trip.members.find(
+    m => m.id === memberId
+  );
+
+  if (!member) return;
+
+  if (!isTripOwner(
+    trip.members.find(m => m.id === state.currentUserId) || {}
+  )) {
+    showToast('オーナーのみ削除できます');
+    return;
+  }
+
+  if (isTripOwner(member)) {
+    showToast('オーナーは削除できません');
+    return;
+  }
+
+  if (!confirm(
+    member.name + 'さんを削除しますか？'
+  )) return;
+
+  try {
+
+    const { error } = await supabaseClient
+      .from('trip_members')
+      .delete()
+      .eq('trip_id', trip.id)
+      .eq('user_id', member.id);
+
+    if (error) throw error;
+
+    await loadTripMembers(trip);
+
+    renderTripPage();
+
+    showToast('参加者を削除しました');
+
+  } catch (error) {
+
+    console.error(error);
+    showToast('削除できませんでした');
+
+  }
+}
+
+
+// ========================================
+// Supabaseから参加者を取得
+// ========================================
+
+async function loadTripMembers(trip) {
+
+  const { data, error } = await supabaseClient
+    .from('trip_members')
+    .select('user_id, name, role')
+    .eq('trip_id', trip.id);
+
+  if (error) throw error;
+
+  trip.members = data.map(m => {
+
+    const oldMember = (trip.members || []).find(
+      x => x.id === m.user_id
+    ) || {};
+
+    return {
+      ...oldMember,
+      id: m.user_id,
+      name: m.name,
+      owner: m.role === 'owner',
+      role: m.role === 'owner'
+        ? ''
+        : (oldMember.role || '')
+    };
+
+  });
+
+  await saveState();
+}
+
+
+// ========================================
+// ボタン設定
+// ========================================
+
+function bindMembersTab(trip) {
+
+  const transferButton =
+    document.getElementById('transfer-owner');
+
+  if (transferButton) {
+    transferButton.addEventListener('click', () => {
+      transferOwner(trip);
+    });
+  }
+
+  document.querySelectorAll('.transfer-member')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+
+        const select =
+          document.getElementById('new-owner-select');
+
+        if (select) {
+          select.value = button.dataset.memberId;
+          transferOwner(trip);
+        }
+
+      });
+    });
+
+  document.querySelectorAll('.delete-member')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        deleteMember(trip, button.dataset.memberId);
+      });
+    });
+
+}
+
+
+// ========================================
+// ページ初期化
+// ========================================
+
+(async function() {
+
+  try {
+
+    await loadState();
+
+    if (!state.profile) {
+      location.href = 'index.html';
+      return;
+    }
+
+    const user = await ensureSupabaseUser();
+
+    // SupabaseのユーザーIDを使用
+    state.currentUserId = user.id;
+
+    const params = new URLSearchParams(location.search);
+
+    const tripId =
+      params.get('trip') || state.currentTripId;
+
+    const trip = findTrip(tripId);
+
+    if (!trip) {
+      location.href = 'index.html';
+      return;
+    }
+
+    state.currentTripId = trip.id;
+
+    // Supabaseから最新の参加者情報を取得
+    await loadTripMembers(trip);
+
+    __page = {
+      key: 'members.html',
+      render: renderMembersTab,
+      bind: bindMembersTab
+    };
+
+    renderTripPage();
+
+  } catch (error) {
+
+    console.error(error);
+
+    document.getElementById('app').innerHTML = `
+      <main>
+        <h2>参加者情報を読み込めませんでした</h2>
+        <p>${escapeHtml(error.message)}</p>
+      </main>
+    `;
+
+  }
+
+})();
+
+</script>
+
 </body>
 </html>
