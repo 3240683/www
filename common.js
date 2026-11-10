@@ -152,12 +152,26 @@ function roleOptions(selected){
   return '<option value="">未設定</option>' +
     ROLES.map(r=>`<option value="${r}" ${r===selected?'selected':''}>${r}</option>`).join('');
 }
+// プロフィール情報から旅行参加者の属性を初期化する
+function createMemberProfile(profile = {}) {
+  return {
+    drink: !!profile.drink,
+    smoke: !!profile.smoke,
+    role: '' // 運転者かどうかは旅行ごとに設定
+  };
+}
 function memberTagsHtml(m){
   const t = [];
+
   if(m.role) t.push(m.role);
-  if(m.drink) t.push('飲酒');
+  else t.push('運転者未設定');
+
+  t.push(m.drink ? '飲酒する' : '飲酒しない');
+  t.push(m.smoke ? '喫煙する' : '喫煙しない');
+
   if(m.exempt) t.push('今回免除');
-  return t.length ? `<span class="role-badge">${t.join('・')}</span>` : '';
+
+  return `<span class="role-badge">${t.join('・')}</span>`;
 }
  
 // 分担方法（上にあるものほど優先度が高い。グループごとにプルダウンで見出し表示）
@@ -208,25 +222,57 @@ function computePayCount(trip){
   return payCount;
 }
  
-// 分担方法から負担対象者のIDを求める（⑪ 今回は負担しない人は自動的に外れる）
+// 分担方法から負担対象者のIDを求める
 function resolveTargets(trip, ex){
   const mode = ex.splitMode || 'equal';
-  const ms = trip.members;
-  const active = ms.filter(m=>!m.exempt);
-  const base = active.length ? active : ms;
-  const ids = list => list.map(m=>m.id);
+  const ms = trip.members || [];
+  const active = ms.filter(m => !m.exempt);
+  const base = active;
+
+  const ids = list => list.map(m => m.id);
   const amounts = ex.splitAmounts || {};
   const ratios = ex.splitRatios || {};
+
   switch(mode){
-    case 'exclude':        return ids(base.filter(m=>!(ex.splitExcluded||[]).includes(m.id)));
+    case 'exclude':
+      return ids(base.filter(
+        m => !(ex.splitExcluded || []).includes(m.id)
+      ));
+
     case 'only':
-    case 'users':          return ids(ms.filter(m=>(ex.splitTargets||[]).includes(m.id)));
-    case 'auto_nondriver': return ids(base.filter(m=>m.role!=='運転者'));
-    case 'auto_drinkers':  return ids(base.filter(m=>!!m.drink));
-    case 'auto_role':      return ids(base.filter(m=>m.role!==ex.splitRole));
-    case 'amounts':        return ids(ms.filter(m=>(Number(amounts[m.id])||0)>0));
-    case 'ratio':          return ids(ms.filter(m=>(Number(ratios[m.id])||0)>0));
-    default:               return ids(base);
+    case 'users':
+      return ids(ms.filter(
+        m => (ex.splitTargets || []).includes(m.id)
+      ));
+
+    // 運転者以外
+    case 'auto_nondriver':
+      return ids(base.filter(
+        m => m.role === '同乗者' ||
+             m.role === '引率者' ||
+             m.role === '学生' ||
+             m.role === '教員'
+      ));
+
+    // 飲酒する人だけ
+    case 'auto_drinkers':
+      return ids(base.filter(m => !!m.drink));
+
+    case 'auto_role':
+      return ids(base.filter(m => m.role !== ex.splitRole));
+
+    case 'amounts':
+      return ids(ms.filter(
+        m => (Number(amounts[m.id]) || 0) > 0
+      ));
+
+    case 'ratio':
+      return ids(ms.filter(
+        m => (Number(ratios[m.id]) || 0) > 0
+      ));
+
+    default:
+      return ids(base);
   }
 }
  
@@ -305,10 +351,39 @@ function splitExpense(trip, ex, exIndex, payCount){
       return shares;
     }
   }
- 
-  let ids = resolveTargets(trip, ex);
-  if(!ids.length) ids = allIds;
-  return distributeEqual(trip, ex, exIndex, payCount, ids, amount, unit);
+ let ids = resolveTargets(trip, ex);
+   // 費用の負担対象者が存在するか確認する
+function validateSplitTargets(trip, ex){
+  const mode = ex.splitMode || 'equal';
+
+  // 手動で金額を指定する場合などは別途判定
+  if(mode === 'amounts') return true;
+
+  const targets = resolveTargets(trip, ex);
+
+  if(!targets.length){
+    if(mode === 'auto_drinkers'){
+      return '飲酒する参加者がいません。飲酒設定を確認してください。';
+    }
+
+    if(mode === 'auto_nondriver'){
+      return '運転者以外の参加者がいません。参加者の役割を確認してください。';
+    }
+
+    return '費用の負担対象者がいません。';
+  }
+
+  return true;
+}
+
+// 負担対象者がいない場合は計算しない
+if(!ids.length){
+  return zero();
+}
+
+return distributeEqual(
+  trip, ex, exIndex, payCount, ids, amount, unit
+);
 }
  
 function computeShares(trip){
