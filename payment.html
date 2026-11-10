@@ -46,9 +46,14 @@ function renderPaymentTab(trip){
     </div>`;
   }).join('');
 
+  const stale = settlementsStale(trip);       // 追加: 実費などの変更後に、精算を計算し直していない場合の警告
+  const staleNote = stale
+    ? `<div class="flow-note" style="border-left-color:var(--accent);margin-bottom:12px;">⚠ 実費や参加者が変更されたため、この精算結果は最新ではありません。<a href="settlement.html?trip=${trip.id}">「精算」タブ</a>で計算し直してください。</div>`
+    : '';
   return `
   <div class="card">
     <div class="section-title"><h2>支払い管理</h2><span class="muted">送金人・受取人の双方が「はい」と回答すると清算済みになります</span></div>
+    ${staleNote}
     ${rows}
   </div>`;
 }
@@ -56,6 +61,7 @@ function bindPaymentTab(trip){
   function afterAnswer(s){
     if(s.paymentCompleted && s.receiptConfirmed){
       s.completedAt = new Date().toLocaleString('ja-JP');
+      pushTripNotification(trip, 'settlement', `${memberName(trip, s.payer)}さん → ${memberName(trip, s.receiver)}さんの精算（${yen(s.amount)}）が完了しました。`);
       showToast('精算が完了しました。');
     } else {
       s.completedAt = null;
@@ -68,7 +74,9 @@ function bindPaymentTab(trip){
       const s = trip.settlements.find(x=>x.id===el.dataset.id);
       const receiverName = memberName(trip, s.receiver);
       openYesNoModal(`${receiverName}さんに代金を支払いましたか？`,
-        ()=>{ s.paymentCompleted = true; afterAnswer(s); },
+        ()=>{ s.paymentCompleted = true;
+              pushTripNotification(trip, 'settlement', `${memberName(trip, s.payer)}さんが${memberName(trip, s.receiver)}さんへの支払い完了（${yen(s.amount)}）を登録しました。受け取りを確認してください。`);
+              afterAnswer(s); },
         ()=>{ s.paymentCompleted = false; afterAnswer(s); }
       );
     };
@@ -78,7 +86,9 @@ function bindPaymentTab(trip){
       const s = trip.settlements.find(x=>x.id===el.dataset.id);
       const payerName = memberName(trip, s.payer);
       openYesNoModal(`${payerName}さんから代金を受け取りましたか？`,
-        ()=>{ s.receiptConfirmed = true; afterAnswer(s); },
+        ()=>{ s.receiptConfirmed = true;
+              pushTripNotification(trip, 'settlement', `${memberName(trip, s.receiver)}さんが${memberName(trip, s.payer)}さんからの受け取り（${yen(s.amount)}）を確認しました。`);
+              afterAnswer(s); },
         ()=>{ s.receiptConfirmed = false; afterAnswer(s); }
       );
     };

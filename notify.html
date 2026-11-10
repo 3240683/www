@@ -169,32 +169,7 @@
     }
 
 
-    // ========================================
-    // 通常の通知を追加
-    // ========================================
-
-    function pushTripNotification(trip, type, message) {
-
-      ensureNotificationData(trip);
-
-      if (trip.notifications[type] === false) {
-        return;
-      }
-
-      trip.notificationHistory.unshift({
-        id: 'notification_' + Date.now(),
-        type: type,
-        message: message,
-        createdAt: new Date().toISOString(),
-        senderId: state.currentUserId,
-        recipientId: null
-      });
-
-      saveState();
-
-      showNotifyToast('通知を追加しました');
-
-    }
+    // ※ 通知を追加する pushTripNotification() は common.js に移動しました（精算・支払いなど各ページから呼ぶため）。
 
 
     // ========================================
@@ -322,7 +297,7 @@
           <div class="notify-message">
 
             <div class="notify-meta">
-              ${isMessage ? 'メッセージ' : 'お知らせ'}
+              ${isMessage ? 'メッセージ' : ({ settlement:'精算のお知らせ', reminder:'入力リマインダー', deadline:'支払い期限' }[item.type] || 'お知らせ')}
               ／
               ${notifyEscapeHTML(formatNotifyDate(item.createdAt))}
             </div>
@@ -406,6 +381,13 @@
         <section class="notify-section">
 
           <h2>通知設定</h2>
+
+          <p class="notify-help">
+            ・精算通知：精算を計算したとき、支払い・受け取りを確認したとき<br>
+            ・入力リマインダー：旅行中でその日の支出が未記録のとき／旅行終了後も実費が1件もないとき<br>
+            ・支払い期限：旅行終了から${PAYMENT_DEADLINE_DAYS}日が過ぎても精算が終わっていないとき<br>
+            通知はこの端末の履歴にだけ残ります（相手の端末には届きません）。
+          </p>
 
           <div class="notify-form">
 

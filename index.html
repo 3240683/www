@@ -13,6 +13,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="common.js"></script>
+<script src="firebase-config.js"></script>
+<script src="cloud.js"></script>
 <script>
 /* =========================================================
    index.html: プロフィール登録 / 旅行一覧 / 旅行作成
@@ -22,8 +24,12 @@ let view = 'onboarding';
 function render() {
   const app = document.getElementById('app');
   if (view === 'onboarding') {
-    app.innerHTML = topbar(false) + renderOnboarding();
+    // 追加: プロフィールをまだ作っていない端末（新しい端末など）でも、バックアップの読み込みやログインができるようにする
+    const cloud = (typeof Cloud !== 'undefined' && Cloud.configured()) ? `<div id="cloud-slot">${Cloud.renderCard()}</div>` : '';
+    const extra = state.profile ? '' : `<main style="padding-top:0;max-width:720px;margin:0 auto;">${renderDataCard()}${cloud}</main>${modalHost()}`;
+    app.innerHTML = topbar(false) + renderOnboarding() + extra;
     bindOnboarding();
+    if (!state.profile) { bindDataCard(); if (typeof Cloud !== 'undefined') Cloud.bindCard(); }
     return;
   }
   if (view === 'tripList') {
@@ -126,12 +132,95 @@ function renderTripList() {
         <h3>まだ旅行がありません</h3>
         <p>「新規作成」から最初の旅行を登録しましょう。</p>
       </div>`}
+    ${renderDataCard()}
+    ${typeof Cloud !== 'undefined' ? `<div id="cloud-slot">${Cloud.renderCard()}</div>` : ''}
   </main>
   ${modalHost()}`;
 }
 
+/* ▼▼▼ 追加: データの書き出し・読み込み（サーバーなしのバックアップ／別の端末への引き継ぎ）（ここから） ▼▼▼ */
+function renderDataCard() {
+  return `
+  <div class="card" id="data-card" style="margin-top:20px;">
+    <div class="section-title"><h2>データの管理</h2><span class="muted">バックアップ・別の端末への引き継ぎ</span></div>
+    <p class="muted">旅行データは、この端末のブラウザ内にだけ保存されています。ブラウザのデータを消すと失われるので、ときどきファイルに書き出しておくと安心です。別の端末へ移すときは、書き出したファイルをその端末で読み込みます。</p>
+    <label style="font-size:13px;display:flex;gap:6px;align-items:center;margin:8px 0;">
+      <input type="checkbox" id="backup-images"> レシート画像も含める（ファイルが大きくなります）
+    </label>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-export" type="button">データを書き出す</button>
+      <button class="btn secondary" id="btn-import" type="button">データを読み込む</button>
+      <input type="file" id="import-file" accept="application/json,.json" hidden>
+    </div>
+    <p class="muted" id="data-status" aria-live="polite" style="margin-top:10px;"></p>
+  </div>`;
+}
+
+function bindDataCard() {
+  const status = document.getElementById('data-status');
+  const say = m => { if (status) status.textContent = m; };
+
+  document.getElementById('btn-export').onclick = async () => {
+    try {
+      const withImages = document.getElementById('backup-images').checked;
+      say('書き出しています…');
+      const { backup, skippedImages } = await buildBackup(withImages);
+      const d = new Date();
+      const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+      downloadJson(backup, `tabihimemo-backup-${ymd}.json`);
+      say(`書き出しました（旅行${backup.trips.length}件` + (withImages ? `・画像${Object.keys(backup.receipts).length}枚` : '') +
+          (skippedImages ? `。画像${skippedImages}枚は見つからず除きました` : '') + '）。');
+    } catch (e) { console.error(e); say('書き出しに失敗しました：' + (e.message || e)); }
+  };
+
+  const fileInput = document.getElementById('import-file');
+  document.getElementById('btn-import').onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    let d;
+    try { d = parseBackup(await file.text()); }
+    catch (e) { say(e.message || '読み込めませんでした'); return; }
+    const imgs = Object.keys(d.receipts || {}).length;
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+    <div class="modal-overlay" id="imp-overlay">
+      <div class="modal" style="max-width:460px;">
+        <h2>データを読み込む</h2>
+        <p>旅行${d.trips.length}件${imgs ? `・画像${imgs}枚` : ''}を含むバックアップです。${d.exportedAt ? `<br><span class="muted">書き出し日時：${escapeHtml(new Date(d.exportedAt).toLocaleString('ja-JP'))}</span>` : ''}</p>
+        <div class="btn-row" style="flex-direction:column;align-items:stretch;">
+          <button class="btn accent" id="imp-merge" type="button">いまのデータに追加する（おすすめ）</button>
+          <button class="btn secondary" id="imp-replace" type="button">いまのデータをすべて置き換える</button>
+          <button class="btn ghost" id="imp-cancel" type="button">キャンセル</button>
+        </div>
+        <p class="muted" style="margin-top:10px;">「追加」は、いまの旅行を消さずに取り込みます（同じ旅行は重複しません）。</p>
+      </div>
+    </div>`;
+    const done = async mode => {
+      root.innerHTML = '';
+      try {
+        const r = await applyBackup(d, mode);
+        if (state.profile && view === 'onboarding') view = 'tripList';     // 新しい端末で読み込んだ場合は、旅行一覧へ移る
+        render();
+        showToast(`読み込みました（追加${r.added}件` + (r.skipped ? `・同じ内容のため除外${r.skipped}件` : '') + (r.images ? `・画像${r.images}枚` : '') + '）');
+      } catch (e) { console.error(e); say('読み込みに失敗しました：' + (e.message || e)); }
+    };
+    document.getElementById('imp-merge').onclick = () => done('merge');
+    document.getElementById('imp-replace').onclick = () => {
+      root.innerHTML = '';
+      openYesNoModal('いまのデータはすべて消えて、ファイルの内容に置き換わります。よろしいですか？', () => done('replace'));
+    };
+    document.getElementById('imp-cancel').onclick = () => { root.innerHTML = ''; };
+    document.getElementById('imp-overlay').addEventListener('click', e => { if (e.target.id === 'imp-overlay') root.innerHTML = ''; });
+  };
+}
+/* ▲▲▲ 追加: データの書き出し・読み込み（ここまで） ▲▲▲ */
+
 function bindTripList() {
   document.getElementById('btn-new-trip').onclick = () => openTripFormModal(null);
+  bindDataCard();                                        // 追加: データの書き出し・読み込み
+  if (typeof Cloud !== 'undefined') Cloud.bindCard();    // 追加: アカウント・クラウド同期
 
   document.querySelectorAll('.trip-card').forEach(el => {
     el.addEventListener('click', e => {
@@ -437,14 +526,8 @@ function openTripFormModal(tripId) {
           members: [{
             id: state.currentUserId,
             name: state.profile.name,
-            owner: true
-            // プロフィール情報を初期値として引き継ぐ
-  drink: !!state.profile.drink,
-  smoke: !!state.profile.smoke,
-
-  // 運転者かどうかは旅行ごとに設定する
-  role: ''
-
+            owner: true,
+            drink: !!state.profile.drink      // 追加: プロフィールの「飲酒」を引き継ぐ（分担ルールの「飲酒する人のみ」に使う）
           }],
           estimate: {
             transport: transport.roundTripTotal,
@@ -488,6 +571,17 @@ function openTripFormModal(tripId) {
   }
 
   render();
+
+  // 追加: クラウド同期の開始（メールのリンクから戻ってきた場合のログイン完了・ログイン状態の復元）
+  if (typeof Cloud !== 'undefined') {
+    Cloud.start(() => {
+      const editing = new URLSearchParams(location.search).get('edit') === 'profile';
+      if (view === 'onboarding' && state.profile && !editing) { view = 'tripList'; render(); return; }   // 同期でプロフィールが届いた
+      if (view === 'tripList') { render(); return; }
+      const slot = document.getElementById('cloud-slot');                  // 入力中の画面を消さないよう、カードだけ差し替える
+      if (slot) { slot.innerHTML = Cloud.renderCard(); Cloud.bindCard(); }
+    });
+  }
 })();
 </script>
 </body>

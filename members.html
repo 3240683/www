@@ -67,6 +67,24 @@ function canManageMembers(trip) {
    3. 参加者一覧の表示
 --------------------------------------------------------- */
 
+/* ---------------------------------------------------------
+   追加: 役割・飲酒・今回免除（分担ルールで使う設定）
+   ・「お酒代は飲酒する人だけ」「ガソリン代は運転者以外」などの自動判定に使われる
+   ・オーナーだけが変更できる
+--------------------------------------------------------- */
+function memberSettingsHtml(m, canEdit) {
+  if (!canEdit) {
+    return memberTagsHtml(m) || '<span class="muted">未設定</span>';
+  }
+  const id = escapeHtml(m.id);
+  return `
+    <div style="display:flex;flex-direction:column;gap:6px;min-width:150px;">
+      <select data-role-id="${id}" aria-label="${escapeHtml(m.name)}さんの役割">${roleOptions(m.role)}</select>
+      <label style="font-size:12.5px;"><input type="checkbox" data-drink-id="${id}" ${m.drink ? 'checked' : ''}> 飲酒する</label>
+      <label style="font-size:12.5px;"><input type="checkbox" data-exempt-id="${id}" ${m.exempt ? 'checked' : ''}> 今回は負担しない</label>
+    </div>`;
+}
+
 function renderMembersTab(trip) {
 
   ensureMembersData(trip);
@@ -100,6 +118,7 @@ function renderMembersTab(trip) {
               : '招待URL'
           }
         </td>
+        <td>${memberSettingsHtml(m, iAmOwner)}</td>
 
         <td>
 
@@ -160,6 +179,7 @@ function renderMembersTab(trip) {
               <th>名前</th>
               <th>権限</th>
               <th>招待方法</th>
+              <th>役割・飲酒・負担</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -168,7 +188,7 @@ function renderMembersTab(trip) {
 
             ${
               rows ||
-              '<tr><td colspan="4">参加者はいません。</td></tr>'
+              '<tr><td colspan="5">参加者はいません。</td></tr>'
             }
 
           </tbody>
@@ -326,6 +346,26 @@ function bindMembersTab(trip) {
   ensureMembersData(trip);
 
   const iAmOwner = canManageMembers(trip);
+
+  /* 追加: 役割・飲酒・今回免除の変更（オーナーのみ）。変更したら精算結果が古くなるので警告が出る */
+  const settingsNote = () => (trip.settlements && trip.settlements.length) ? '。「精算」タブで精算を計算し直してください' : '';
+  const updateMember = (id, patch, msg) => {
+    if (!canManageMembers(trip)) { showToast('設定を変更できるのはオーナーのみです'); return; }
+    const m = trip.members.find(x => x.id === id);
+    if (!m) return;
+    Object.keys(patch).forEach(k => { if (patch[k] === '' || patch[k] === false) delete m[k]; else m[k] = patch[k]; });
+    rerenderPage();
+    showToast(msg + settingsNote());
+  };
+  document.querySelectorAll('[data-role-id]').forEach(el => {
+    el.onchange = () => updateMember(el.dataset.roleId, { role: el.value }, '役割を変更しました');
+  });
+  document.querySelectorAll('[data-drink-id]').forEach(el => {
+    el.onchange = () => updateMember(el.dataset.drinkId, { drink: el.checked }, '飲酒の設定を変更しました');
+  });
+  document.querySelectorAll('[data-exempt-id]').forEach(el => {
+    el.onchange = () => updateMember(el.dataset.exemptId, { exempt: el.checked }, '負担の設定を変更しました');
+  });
 
 
   /* ---------------------------------------
@@ -545,6 +585,16 @@ function bindMembersTab(trip) {
         );
 
         if (!member || member.owner) {
+          return;
+        }
+
+        // 追加: 支払者になっている実費がある人を削除すると、その立て替え分が精算から抜けて金額が合わなくなる
+        const paidCount = paidExpenseCount(trip, member.id);
+        if (paidCount > 0) {
+          alert(
+            `${member.name}さんが支払った実費の記録が${paidCount}件あります。\n` +
+            '削除すると精算が正しく計算できなくなるため、先に「実費記録」で支払者を変更するか、該当の記録を削除してください。'
+          );
           return;
         }
 

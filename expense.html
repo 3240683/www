@@ -38,6 +38,11 @@
     margin:16px -20px -20px; padding:12px 20px; border-radius:0 0 var(--radius-card, 6px) var(--radius-card, 6px);
   }
   .pay-hint{ font-size:12px; color:var(--ink-soft); margin-top:4px; }
+  /* 追加: 分担ルールの設定欄・一時保存の表示 */
+  .split-targets{ display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px; }
+  .split-targets label{ font-size:13px; display:flex; gap:6px; align-items:center; }
+  .split-tag{ font-size:11.5px; color:var(--accent); margin-top:2px; }
+  .temp-note{ font-size:12px; color:var(--ink-soft); }
 </style>
 </head>
 <body>
@@ -50,30 +55,7 @@
    expense.html: 3.5 実費登録画面（オフラインOCR／行選択機能つき）
 ========================================================= */
 /* ▼▼▼ 変更: カメラ撮影とレシート画像の保存（ここから） ▼▼▼ */
-// 保存したレシート画像はブラウザ内のIndexedDBに入れる（localStorageは約5MBまでで画像には足りないため）。
-// 旅行データ側には画像のID（receiptId）だけを持たせる。外部には送信されない。
-const RCP_DB = 'tabihimemo-receipts', RCP_STORE = 'receipts';
-function idbOpen(){
-  return new Promise((resolve, reject)=>{
-    const req = indexedDB.open(RCP_DB, 1);
-    req.onupgradeneeded = ()=> req.result.createObjectStore(RCP_STORE);
-    req.onsuccess = ()=> resolve(req.result);
-    req.onerror = ()=> reject(req.error);
-  });
-}
-async function idbRun(mode, fn){
-  const db = await idbOpen();
-  return new Promise((resolve, reject)=>{
-    const tx = db.transaction(RCP_STORE, mode);
-    const req = fn(tx.objectStore(RCP_STORE));
-    tx.oncomplete = ()=>{ db.close(); resolve(req ? req.result : undefined); };
-    tx.onerror = tx.onabort = ()=>{ db.close(); reject(tx.error); };
-  });
-}
-const idbPut    = (id, blob)=> idbRun('readwrite', st=> st.put(blob, id));
-const idbGet    = (id)=>       idbRun('readonly',  st=> st.get(id));
-const idbDelete = (id)=>       idbRun('readwrite', st=> st.delete(id));
-const idbKeys   = ()=>         idbRun('readonly',  st=> st.getAllKeys());
+// ※ IndexedDB（idbPut / idbGet / idbDelete / idbKeys）は common.js に移動しました。
 
 let pendingReceipt = null;      // 撮影／選択したばかりで、まだ保存していない画像（メモリ上のみ。ページを離れると消える）
 let objectUrls = [];            // 画面表示用に作ったURL（再描画のたびに解放する）
@@ -166,7 +148,9 @@ async function openReceiptViewer(exp, onDeleted){
   <div class="modal-overlay" id="rv-overlay">
     <div class="modal" style="max-width:640px;text-align:center;">
       <img src="${url}" alt="レシート画像" style="max-width:100%;max-height:70vh;border:1px solid var(--line);">
+      ${exp.receiptTemp ? '<p class="temp-note">一時保存の画像です。このタブを閉じると（最長24時間で）自動的に削除されます。残したい場合は「ずっと保存する」を押してください。</p>' : ''}
       <div class="btn-row" style="justify-content:center;">
+        ${exp.receiptTemp ? '<button class="btn accent" id="rv-keep">ずっと保存する</button>' : ''}
         <a class="btn secondary" href="${url}" download="receipt_${exp.date||'image'}.jpg">ダウンロード</a>
         <button class="btn ghost" id="rv-delete">画像を削除</button>
         <button class="btn secondary" id="rv-close">閉じる</button>
@@ -176,11 +160,17 @@ async function openReceiptViewer(exp, onDeleted){
   document.getElementById('rv-close').onclick = ()=>{ root.innerHTML = ''; };
   document.getElementById('rv-overlay').addEventListener('click', (e)=>{ if(e.target.id === 'rv-overlay') root.innerHTML = ''; });
   document.getElementById('rv-delete').onclick = ()=> confirmDeleteReceipt(exp, onDeleted);
+  const keepBtn = document.getElementById('rv-keep');
+  if(keepBtn) keepBtn.onclick = ()=>{      // 一時保存 → ずっと保存
+    delete exp.receiptTemp; saveState(); root.innerHTML = '';
+    if(onDeleted) rerenderPage(); else rerenderPage();
+    showToast('レシート画像をずっと保存します');
+  };
 }
 function confirmDeleteReceipt(exp, onDeleted){
   openYesNoModal('このレシート画像を削除しますか？（記録そのものは残ります）', async ()=>{
     try{ await idbDelete(exp.receiptId); }catch(e){}
-    delete exp.receiptId;
+    delete exp.receiptId; delete exp.receiptTemp;
     if(onDeleted) onDeleted(); else rerenderPage();
     showToast('レシート画像を削除しました');
   });
@@ -207,15 +197,15 @@ function renderExpenseTab(trip){
       <td class="amount">${yen(ex.actual)}</td>
       <td>${escapeHtml(memberName(trip, ex.payer))}</td>
       <td>${ex.date||'-'}</td>
-      <td class="muted">${escapeHtml(ex.memo||'')}</td>
+      <td class="muted">${escapeHtml(ex.memo||'')}${(ex.splitMode && ex.splitMode !== 'equal') ? `<div class="split-tag">分担：${escapeHtml(describeSplit(trip, ex))}</div>` : ''}</td>
       <td style="white-space:nowrap;">
-        ${ex.receiptId ? `<button class="icon-btn btn-view-receipt" data-id="${ex.id}" title="レシート画像を見る">🧾</button>` : ''}
+        ${ex.receiptId ? `<button class="icon-btn btn-view-receipt" data-id="${ex.id}" title="${ex.receiptTemp ? 'レシート画像を見る（一時保存：タブを閉じると消えます）' : 'レシート画像を見る'}" ${ex.receiptTemp ? 'style="opacity:.55;"' : ''}>🧾</button>` : ''}
         <button class="icon-btn btn-edit-expense" data-id="${ex.id}" title="編集">✎</button>
         <button class="icon-btn btn-del-expense" data-id="${ex.id}" title="削除">🗑</button>
       </td>
     </tr>`).join('');
   const memberOptions = trip.members.map(m=>`<option value="${m.id}" ${m.id===ev.payer?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
-  const catOptions = ESTIMATE_CATEGORIES.map(([k,l])=>`<option value="${k}" ${k===ev.category?'selected':''}>${l}</option>`).join('');
+  const catOptions = EXPENSE_CATEGORIES.map(([k,l])=>`<option value="${k}" ${k===ev.category?'selected':''}>${l}</option>`).join('');
 
   return `
   <div class="card">
@@ -239,6 +229,12 @@ function renderExpenseTab(trip){
     <div class="grid2">
       <div class="field"><label>支払日 <span style="color:var(--accent)">*</span></label><input type="date" id="ex-date" value="${ev.date||''}"></div>
       <div class="field"><label>メモ</label><input type="text" id="ex-memo" placeholder="任意" value="${escapeHtml(ev.memo||'')}"></div>
+    </div>
+    <div class="field">
+      <label>負担する人（分担方法）</label>
+      <select id="ex-split">${splitModeOptionsHtml()}</select>
+      <div id="ex-split-targets" class="split-targets"></div>
+      <div class="pay-hint" id="ex-split-hint"></div>
     </div>
     ${editing && editing.receiptId ? `
     <div class="field">
@@ -710,10 +706,65 @@ function bindExpenseTab(trip){
   pendingReceipt = null;          // 再描画のたびに、保存していない撮影画像は破棄する（一時データのため）
   gcReceipts();
 
-  // ---- 撮影／選択した画像を読み取る（画像は保存を選ばない限り、読み取り後に捨てる） ----
+  // ---- 分担ルール（誰が負担するか）----
+  const editingNow = editingId ? trip.expenses.find(x=>x.id===editingId) : null;     // 編集中の記録（無ければ null）
+  const splitSel = document.getElementById('ex-split');
+  const targetsEl = document.getElementById('ex-split-targets');
+  const hintEl = document.getElementById('ex-split-hint');
+  const catSel = document.getElementById('ex-category');
+  const exclSet = new Set(editingNow && editingNow.splitExcluded || []);
+  const tgtSet  = new Set(editingNow && editingNow.splitTargets  || []);
+  let splitTouched = !!editingNow;     // 編集中・自分で選んだあとは、費目に合わせて自動で切り替えない
+  splitSel.value = (editingNow && editingNow.splitMode) || (CATEGORY_DEFAULT_SPLIT[catSel.value] || 'equal');
+
+  function renderSplitTargets(){
+    const mode = splitSel.value;
+    const checkList = (set, label)=>{
+      targetsEl.innerHTML = `<span class="pay-hint" style="width:100%;margin:0;">${label}</span>` + trip.members.map(m=>
+        `<label><input type="checkbox" data-sid="${escapeHtml(m.id)}" ${set.has(m.id) ? 'checked' : ''}> ${escapeHtml(m.name)}</label>`).join('');
+      targetsEl.querySelectorAll('input[data-sid]').forEach(cb=>{ cb.onchange = ()=>{ cb.checked ? set.add(cb.dataset.sid) : set.delete(cb.dataset.sid); }; });
+    };
+    targetsEl.innerHTML = ''; hintEl.innerHTML = '';
+    if(mode === 'exclude') checkList(exclSet, '負担しない人にチェック（それ以外の全員で割ります）');
+    else if(mode === 'only') checkList(tgtSet, '負担する人にチェック');
+    else if(mode === 'users') checkList(tgtSet, '利用した人にチェック');
+    else {
+      const ids = resolveTargets(trip, { splitMode: mode });
+      const names = ids.map(id=> memberName(trip, id)).join('・');
+      const link = `<a href="members.html?trip=${trip.id}">参加者ページ</a>`;
+      hintEl.innerHTML = mode === 'equal'
+        ? `全員で均等に割ります（${link}で「今回免除」にした人は除きます）`
+        : (names ? `負担する人：${escapeHtml(names)}（${link}の役割・飲酒の設定から自動で決まります）`
+                 : `対象の人がいません。${link}で役割・飲酒を設定してください`);
+    }
+  }
+  splitSel.onchange = ()=>{ splitTouched = true; renderSplitTargets(); };
+  catSel.addEventListener('change', ()=>{      // 「お酒代」「ガソリン代」などは、初期の分担方法を自動で合わせる
+    if(!splitTouched){ splitSel.value = CATEGORY_DEFAULT_SPLIT[catSel.value] || 'equal'; renderSplitTargets(); }
+  });
+  renderSplitTargets();
+
+  // 入力内容の確認と、記録に保存する項目の組み立て
+  function collectSplit(){
+    const mode = splitSel.value;
+    if(mode === 'equal') return { ok:true, fields:{} };
+    if(mode === 'exclude'){
+      const ex = trip.members.filter(m=> exclSet.has(m.id)).map(m=> m.id);
+      if(trip.members.length - ex.length < 1) return { ok:false, msg:'全員が除外されています。負担する人を1人以上残してください' };
+      return { ok:true, fields:{ splitMode:mode, splitExcluded: ex } };
+    }
+    if(mode === 'only' || mode === 'users'){
+      const tg = trip.members.filter(m=> tgtSet.has(m.id)).map(m=> m.id);
+      if(!tg.length) return { ok:false, msg:'負担する人を1人以上選んでください' };
+      return { ok:true, fields:{ splitMode:mode, splitTargets: tg } };
+    }
+    if(!resolveTargets(trip, { splitMode: mode }).length) return { ok:false, msg:'この分担方法に当てはまる人がいません。参加者ページで役割・飲酒を設定してください' };
+    return { ok:true, fields:{ splitMode:mode } };
+  }
+
+  // ---- 撮影／選択した画像を読み取る（画像は「実費を追加」まではメモリ上だけ。追加すると一時保存） ----
   const statusEl = document.getElementById('ocr-status');
   const previewEl = document.getElementById('receipt-preview');
-  const editingNow = editingId ? trip.expenses.find(x=>x.id===editingId) : null;
 
   function renderReceiptPreview(){
     if(!pendingReceipt){ previewEl.innerHTML = ''; return; }
@@ -722,7 +773,8 @@ function bindExpenseTab(trip){
       <div class="receipt-preview">
         <img class="receipt-thumb-img" src="${makeUrl(pendingReceipt)}" alt="撮影した画像">
         <label><input type="checkbox" id="receipt-keep">
-          このレシート画像も保存する（チェックしたときだけ保存します。この端末のブラウザ内に保存され、外部には送信されません）${replacing ? '<br>※ チェックして保存すると、保存済みの画像はこの画像に置き換わります' : ''}
+          このレシート画像を<b>ずっと</b>保存する<br>
+          <span class="temp-note">チェックしなくても、「実費を追加」を押すと一時保存されます（このタブを閉じると自動で削除。最長24時間）。画像はこの端末のブラウザ内にだけ保存され、外部には送信されません。${replacing ? '<br>※ 保存済みの画像は、この画像に置き換わります。' : ''}</span>
         </label>
       </div>`;
   }
@@ -806,11 +858,15 @@ function bindExpenseTab(trip){
     if(!actual){ showToast('金額を入力してください'); return; }
     if(!date){ showToast('支払日を入力してください'); return; }
 
-    // 「保存する」にチェックが入っているときだけ、画像をこの端末のブラウザ内に保存する
-    let newReceiptId = null, imageFailed = false;
+    // 分担ルールの入力内容を確認する
+    const sp = collectSplit();
+    if(!sp.ok){ showToast(sp.msg); return; }
+
+    // 画像は、チェックなしでも「一時保存」として記録に付ける（タブを閉じると消える）。チェックありなら「ずっと保存」
+    let newReceiptId = null, newReceiptTemp = false, imageFailed = false;
     const keep = document.getElementById('receipt-keep');
-    if(pendingReceipt && keep && keep.checked){
-      try{ newReceiptId = uid('rcp'); await idbPut(newReceiptId, pendingReceipt); }
+    if(pendingReceipt){
+      try{ newReceiptId = uid('rcp'); await idbPut(newReceiptId, pendingReceipt); newReceiptTemp = !(keep && keep.checked); }
       catch(e){ console.error(e); newReceiptId = null; imageFailed = true; }
     }
     const imageNote = imageFailed ? '（レシート画像は保存できませんでした）' : '';
@@ -819,9 +875,12 @@ function bindExpenseTab(trip){
       const target = trip.expenses.find(x=>x.id===editingId);
       if(target){
         Object.assign(target, { category, actual, payer, date, memo });
+        ['splitMode','splitExcluded','splitTargets'].forEach(k=> delete target[k]);
+        Object.assign(target, sp.fields);
         if(newReceiptId){
           if(target.receiptId) { try{ await idbDelete(target.receiptId); }catch(e){} }   // 置き換え前の画像を消す
           target.receiptId = newReceiptId;
+          if(newReceiptTemp) target.receiptTemp = true; else delete target.receiptTemp;
         }
       }
       editingId = null;
@@ -832,7 +891,8 @@ function bindExpenseTab(trip){
       return;
     }
     const rec = { id: uid('exp'), category, estimate:0, actual, payer, date, memo };
-    if(newReceiptId) rec.receiptId = newReceiptId;
+    Object.assign(rec, sp.fields);
+    if(newReceiptId){ rec.receiptId = newReceiptId; if(newReceiptTemp) rec.receiptTemp = true; }
     trip.expenses.push(rec);
     rerenderPage(); showToast('実費を記録しました' + imageNote);
   };

@@ -19,7 +19,7 @@
 ========================================================= */
 function renderSettlementTab(trip){
   const totalEstimate = ESTIMATE_CATEGORIES.reduce((s,[k])=> s + (Number(trip.estimate[k])||0), 0);
-  const { balances, paid, shareMap, totalActual } = computeBalances(trip);
+  const { balances, paid, shareMap, totalActual, perExpense } = computeBalances(trip);
   const diff = totalActual - totalEstimate;
 
   const balanceRows = trip.members.map(m=>{
@@ -31,6 +31,24 @@ function renderSettlementTab(trip){
       <td class="amount ${bal>=0?'pos':'neg'}">${bal>=0?'受取 '+yen(bal):'立替 '+yen(-bal)}</td>
     </tr>`;
   }).join('');
+
+  // 追加: 費用ごとの分担（誰がいくら負担したか）。分担ルールが正しく効いているかを確認できる
+  const breakdownRows = trip.expenses.map((ex, i) => {
+    const sh = (perExpense && perExpense[i]) || {};
+    const parts = trip.members.filter(m => (sh[m.id] || 0) > 0).map(m => `${escapeHtml(m.name)} ${yen(sh[m.id])}`).join(' ／ ');
+    return `<tr>
+      <td>${escapeHtml(ex.date || '-')}</td>
+      <td>${categoryLabel(ex.category)}${ex.memo ? '：' + escapeHtml(ex.memo) : ''}</td>
+      <td class="amount">${yen(ex.actual)}</td>
+      <td>${escapeHtml(memberName(trip, ex.payer))}</td>
+      <td>${escapeHtml(describeSplit(trip, ex))}</td>
+      <td class="muted">${parts || '-'}</td>
+    </tr>`;
+  }).join('');
+
+  // 追加: 実費や参加者を変更したあとで、保存済みの精算結果が古くなっていないかを確認する
+  const stale = settlementsStale(trip);
+  const hasDone = trip.settlements.some(isSettlementDone);
 
   const transferRows = trip.settlements.map(s=>{
     const st = settlementStatus(s);
@@ -57,16 +75,35 @@ function renderSettlementTab(trip){
       <thead><tr><th>参加者</th><th>支払った額</th><th>分担額</th><th>収支</th></tr></thead>
       <tbody>${balanceRows}</tbody>
     </table>
+    ${hasDone ? '<p class="muted" style="margin-top:8px;">※ 精算完了済みの送金は支払い済みとして差し引き、残りの金額だけを再計算します。</p>' : ''}
     <div class="btn-row"><button class="btn accent" id="btn-calc-settlement">最小送金で精算を計算</button></div>
   </div>
+  ${trip.expenses.length ? `
+  <div class="card">
+    <details>
+      <summary style="cursor:pointer;font-weight:700;">費用ごとの分担を見る（${trip.expenses.length}件）</summary>
+      <div style="overflow-x:auto;margin-top:12px;">
+        <table class="data-table">
+          <thead><tr><th>日付</th><th>内容</th><th>金額</th><th>支払者</th><th>分担方法</th><th>負担額</th></tr></thead>
+          <tbody>${breakdownRows}</tbody>
+        </table>
+      </div>
+    </details>
+  </div>` : ''}
   <div class="card">
     <div class="section-title"><h2>精算結果（送金回数が最小になるよう計算）</h2></div>
+    ${stale ? '<div class="flow-note" style="border-left-color:var(--accent);margin-bottom:12px;">⚠ 実費や参加者が変更されたため、下の精算結果は最新ではありません。「最小送金で精算を計算」を押して計算し直してください。</div>' : ''}
     ${trip.settlements.length ? transferRows : '<p class="muted">「最小送金で精算を計算」を押すと結果が表示されます。</p>'}
   </div>`;
 }
 function bindSettlementTab(trip){
   document.getElementById('btn-calc-settlement').onclick = ()=>{
     ensureSettlements(trip);
+    // 追加: 精算の通知（同じ結果を何度計算しても、通知は1回だけ）
+    const open = trip.settlements.filter(s => !isSettlementDone(s));
+    const key = 'settle-' + trip.id + '-' + open.map(s => s.payer + '>' + s.receiver + ':' + s.amount).join('|');
+    pushTripNotification(trip, 'settlement',
+      open.length ? `精算結果を計算しました。送金は${open.length}件です。` : '精算結果を計算しました。送金は必要ありません。', { key });
     rerenderPage(); showToast('精算結果を計算しました');
   };
 }

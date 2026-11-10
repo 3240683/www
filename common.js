@@ -5,6 +5,34 @@
    state管理・保存（localStorage）・計算ロジック・共通UI部品をまとめている。
 ========================================================= */
  
+/* ▼▼▼ 追加: 画面が真っ白になる代わりに、エラー内容と復旧ボタンを表示する（ここから） ▼▼▼ */
+(function(){
+  function showFatal(msg){
+    const app = document.getElementById('app');
+    if(!app || app.innerHTML.trim()) return;      // すでに画面が表示されている場合は何もしない
+    app.innerHTML =
+      '<div style="max-width:560px;margin:40px auto;padding:20px;border:1px solid #c0392b;background:#fff;font-size:14px;line-height:1.7;">' +
+      '<b style="color:#c0392b">画面を表示できませんでした</b>' +
+      '<p id="fatal-msg" style="word-break:break-all;color:#555;margin:8px 0;"></p>' +
+      '<p>ブラウザに保存されている古い形式のデータが原因の場合があります。下のボタンで保存データを初期化すると直ることがあります（この端末に保存した旅行データは消えます）。</p>' +
+      '<button id="fatal-reset" style="padding:8px 14px;cursor:pointer;">保存データを初期化して再読み込み</button></div>';
+    document.getElementById('fatal-msg').textContent = 'エラー内容：' + msg;
+    document.getElementById('fatal-reset').onclick = ()=>{
+      try{ localStorage.removeItem('tabihimemo:data:v1'); }catch(e){}
+      location.href = 'index.html';
+    };
+  }
+  window.addEventListener('error', e=> showFatal(e.message || String(e.error)));
+  window.addEventListener('unhandledrejection', e=> showFatal((e.reason && e.reason.message) || String(e.reason)));
+})();
+/* ▲▲▲ 追加: エラー表示（ここまで） ▲▲▲ */
+
+// 追加: 端末の現地時間での日付（YYYY-MM-DD）。toISOString() はUTCなので、日本の0〜9時に前日の日付になってしまう
+function localDateStr(d){
+  d = d || new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 const STORAGE_KEY = 'tabihimemo:data:v1';
  
 let state = {
@@ -12,23 +40,42 @@ let state = {
   currentUserId: 'me',
   trips: [],                 // Trip[]
   currentTripId: null,
-  roundingRotation: {}        // tripId -> last index used for rotation method
+  roundingRotation: {},       // tripId -> last index used for rotation method
+  deletedTrips: {}            // 追加: 削除した旅行ID -> 削除した時刻（クラウド同期で「削除済み」を伝えるため）
 };
+
+let __hashes = {};            // 追加: 旅行ID -> 読み込み時点の内容のハッシュ（変更を検出して更新日時を付けるため）
+let __knownIds = new Set();   // 追加: 前回保存した時点の旅行ID一覧（削除の検出用）
  
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
  
 // ブラウザのlocalStorageに保存する（この端末・このブラウザ内のみ。無料・オフライン対応）
 async function saveState(){
   try{
+    const now = Date.now();
+    // 変更があった旅行には更新日時（updatedAt）を付ける（クラウド同期で新旧を比べるため）
+    state.trips.forEach(t=>{
+      const h = tripHash(t);
+      if(__hashes[t.id] !== h || !t.updatedAt){ t.updatedAt = now; __hashes[t.id] = tripHash(t); }
+    });
+    // 削除された旅行を記録する（呼び出し側の削除処理を変えずに検出できる）
+    const ids = new Set(state.trips.map(t=>t.id));
+    __knownIds.forEach(id=>{ if(!ids.has(id)) state.deletedTrips[id] = now; });
+    ids.forEach(id=>{ delete state.deletedTrips[id]; });
+    __knownIds = ids;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       profile: state.profile,
       currentUserId: state.currentUserId,
       trips: state.trips,
       currentTripId: state.currentTripId,
+      deletedTrips: state.deletedTrips,
+      knownTripIds: [...ids],
     }));
+    if(typeof window.__afterSave === 'function') window.__afterSave();     // クラウド同期（cloud.js）が使う
   }catch(e){ console.error('保存に失敗しました', e); }
 }
- 
+function tripHash(t){ const c = Object.assign({}, t); delete c.updatedAt; return hashString(JSON.stringify(c)); }
+
 // localStorageから読み込む。render()は呼ばない（各ページが自分で描画するため）
 async function loadState(){
   try{
@@ -37,13 +84,44 @@ async function loadState(){
       const data = JSON.parse(raw);
       state.profile = data.profile || null;
       state.currentUserId = data.currentUserId || 'me';
-      state.trips = data.trips || [];
+      state.trips = Array.isArray(data.trips) ? data.trips.filter(Boolean) : [];
       state.currentTripId = data.currentTripId || null;
+      state.trips.forEach(normalizeTrip);      // 追加: 古い形式のデータでも動くように不足項目を補う
+      state.deletedTrips = (data.deletedTrips && typeof data.deletedTrips === 'object') ? data.deletedTrips : {};
+      __knownIds = new Set(Array.isArray(data.knownTripIds) ? data.knownTripIds : state.trips.map(t=>t.id));
     }
   }catch(e){
     console.error('読み込みに失敗しました', e);
   }
+  __hashes = {}; state.trips.forEach(t=>{ __hashes[t.id] = tripHash(t); });
+  await purgeTempReceipts();
 }
+
+/* ▼▼▼ 追加: 旅行データの不足項目を補う（古いバージョンで保存したデータ対策）（ここから） ▼▼▼ */
+function normalizeTrip(t){
+  const str = v => (typeof v === 'string' ? v : '');
+  t.title = str(t.title); t.departure = str(t.departure); t.destination = str(t.destination);
+  t.startDate = str(t.startDate); t.endDate = str(t.endDate);
+  if(!Array.isArray(t.members)) t.members = [];
+  t.members = t.members.filter(Boolean);
+  if(!t.members.length){
+    t.members = [{ id: state.currentUserId, name: (state.profile && state.profile.name) || '自分', owner: true }];
+  }
+  if(!t.estimate || typeof t.estimate !== 'object') t.estimate = {};
+  ESTIMATE_CATEGORIES.forEach(([k])=>{ t.estimate[k] = Number(t.estimate[k]) || 0; });
+  if(!Array.isArray(t.expenses)) t.expenses = [];
+  t.expenses = t.expenses.filter(Boolean);
+  t.expenses.forEach(e=>{
+    if(!e.id) e.id = uid('exp');
+    if(!e.payer && t.members[0]) e.payer = t.members[0].id;
+  });
+  if(!Array.isArray(t.settlements)) t.settlements = [];
+  if(!t.invite) t.invite = null;
+  t.notifications = Object.assign({ settlement:true, reminder:true, deadline:true }, t.notifications || {});
+  if(!t.roundingUnit) t.roundingUnit = 1;
+  if(!t.roundingMethod) t.roundingMethod = 'random';
+}
+/* ▲▲▲ 追加: 旅行データの補完（ここまで） ▲▲▲ */
  
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -72,7 +150,7 @@ function isOwner(trip, userId){
   return !!(m && m.owner);
 }
 function tripStatusLabel(trip){
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateStr();      // 変更: UTCではなく端末の現地時間の日付で判定する
   if(trip.settlements.length && trip.settlements.every(s=>s.paymentCompleted && s.receiptConfirmed)) return {text:'精算完了', done:true};
   if(trip.endDate && trip.endDate < today) return {text:'精算中', done:false};
   if(trip.startDate && trip.startDate > today) return {text:'旅行前', done:false};
@@ -152,26 +230,12 @@ function roleOptions(selected){
   return '<option value="">未設定</option>' +
     ROLES.map(r=>`<option value="${r}" ${r===selected?'selected':''}>${r}</option>`).join('');
 }
-// プロフィール情報から旅行参加者の属性を初期化する
-function createMemberProfile(profile = {}) {
-  return {
-    drink: !!profile.drink,
-    smoke: !!profile.smoke,
-    role: '' // 運転者かどうかは旅行ごとに設定
-  };
-}
 function memberTagsHtml(m){
   const t = [];
-
   if(m.role) t.push(m.role);
-  else t.push('運転者未設定');
-
-  t.push(m.drink ? '飲酒する' : '飲酒しない');
-  t.push(m.smoke ? '喫煙する' : '喫煙しない');
-
+  if(m.drink) t.push('飲酒');
   if(m.exempt) t.push('今回免除');
-
-  return `<span class="role-badge">${t.join('・')}</span>`;
+  return t.length ? `<span class="role-badge">${t.join('・')}</span>` : '';
 }
  
 // 分担方法（上にあるものほど優先度が高い。グループごとにプルダウンで見出し表示）
@@ -222,57 +286,25 @@ function computePayCount(trip){
   return payCount;
 }
  
-// 分担方法から負担対象者のIDを求める
+// 分担方法から負担対象者のIDを求める（⑪ 今回は負担しない人は自動的に外れる）
 function resolveTargets(trip, ex){
   const mode = ex.splitMode || 'equal';
-  const ms = trip.members || [];
-  const active = ms.filter(m => !m.exempt);
-  const base = active;
-
-  const ids = list => list.map(m => m.id);
+  const ms = trip.members;
+  const active = ms.filter(m=>!m.exempt);
+  const base = active.length ? active : ms;
+  const ids = list => list.map(m=>m.id);
   const amounts = ex.splitAmounts || {};
   const ratios = ex.splitRatios || {};
-
   switch(mode){
-    case 'exclude':
-      return ids(base.filter(
-        m => !(ex.splitExcluded || []).includes(m.id)
-      ));
-
+    case 'exclude':        return ids(base.filter(m=>!(ex.splitExcluded||[]).includes(m.id)));
     case 'only':
-    case 'users':
-      return ids(ms.filter(
-        m => (ex.splitTargets || []).includes(m.id)
-      ));
-
-    // 運転者以外
-    case 'auto_nondriver':
-      return ids(base.filter(
-        m => m.role === '同乗者' ||
-             m.role === '引率者' ||
-             m.role === '学生' ||
-             m.role === '教員'
-      ));
-
-    // 飲酒する人だけ
-    case 'auto_drinkers':
-      return ids(base.filter(m => !!m.drink));
-
-    case 'auto_role':
-      return ids(base.filter(m => m.role !== ex.splitRole));
-
-    case 'amounts':
-      return ids(ms.filter(
-        m => (Number(amounts[m.id]) || 0) > 0
-      ));
-
-    case 'ratio':
-      return ids(ms.filter(
-        m => (Number(ratios[m.id]) || 0) > 0
-      ));
-
-    default:
-      return ids(base);
+    case 'users':          return ids(ms.filter(m=>(ex.splitTargets||[]).includes(m.id)));
+    case 'auto_nondriver': return ids(base.filter(m=>m.role!=='運転者'));
+    case 'auto_drinkers':  return ids(base.filter(m=>!!m.drink));
+    case 'auto_role':      return ids(base.filter(m=>m.role!==ex.splitRole));
+    case 'amounts':        return ids(ms.filter(m=>(Number(amounts[m.id])||0)>0));
+    case 'ratio':          return ids(ms.filter(m=>(Number(ratios[m.id])||0)>0));
+    default:               return ids(base);
   }
 }
  
@@ -351,39 +383,10 @@ function splitExpense(trip, ex, exIndex, payCount){
       return shares;
     }
   }
- let ids = resolveTargets(trip, ex);
-   // 費用の負担対象者が存在するか確認する
-function validateSplitTargets(trip, ex){
-  const mode = ex.splitMode || 'equal';
-
-  // 手動で金額を指定する場合などは別途判定
-  if(mode === 'amounts') return true;
-
-  const targets = resolveTargets(trip, ex);
-
-  if(!targets.length){
-    if(mode === 'auto_drinkers'){
-      return '飲酒する参加者がいません。飲酒設定を確認してください。';
-    }
-
-    if(mode === 'auto_nondriver'){
-      return '運転者以外の参加者がいません。参加者の役割を確認してください。';
-    }
-
-    return '費用の負担対象者がいません。';
-  }
-
-  return true;
-}
-
-// 負担対象者がいない場合は計算しない
-if(!ids.length){
-  return zero();
-}
-
-return distributeEqual(
-  trip, ex, exIndex, payCount, ids, amount, unit
-);
+ 
+  let ids = resolveTargets(trip, ex);
+  if(!ids.length) ids = allIds;
+  return distributeEqual(trip, ex, exIndex, payCount, ids, amount, unit);
 }
  
 function computeShares(trip){
@@ -460,17 +463,54 @@ function computeMinimalTransfers(balances){
   return transfers;
 }
  
-function ensureSettlements(trip){
+/* ▼▼▼ 変更: 精算の再計算で、精算完了済み（送金・受取の両方が確認済み）の記録を消さないようにする（ここから） ▼▼▼ */
+// 以前は、完了済みの記録を捨てて、完了した支払いを残高にも反映していなかったため、
+// 精算後に実費を追加して再計算すると、支払い済みの金額が再び「未払い」として現れていた。
+// 変更後: 完了済みの送金は「すでに支払われた」として残高に反映し、記録も残す。未完了の分だけを、残りの金額で作り直す。
+function isSettlementDone(s){ return !!(s && s.paymentCompleted && s.receiptConfirmed); }
+
+function computeOpenTransfers(trip){
+  const done = (trip.settlements || []).filter(isSettlementDone);
   const { balances } = computeBalances(trip);
-  const transfers = computeMinimalTransfers(balances);
-  const newList = transfers.map(t=>{
-    const reuse = trip.settlements.find(s=> s.payer===t.payer && s.receiver===t.receiver && !s.receiptConfirmed);
-    if(reuse){ reuse.amount = t.amount; return reuse; }
+  done.forEach(s=>{
+    if(balances[s.payer] !== undefined)    balances[s.payer]    += Number(s.amount) || 0;   // 払った側: 借りが減る
+    if(balances[s.receiver] !== undefined) balances[s.receiver] -= Number(s.amount) || 0;   // 受け取った側: 貸しが減る
+  });
+  return computeMinimalTransfers(balances);
+}
+
+function ensureSettlements(trip){
+  const old = Array.isArray(trip.settlements) ? trip.settlements : [];
+  const done = old.filter(isSettlementDone);
+  const open = computeOpenTransfers(trip).map(t=>{
+    const reuse = old.find(s=> s.payer===t.payer && s.receiver===t.receiver && !isSettlementDone(s));
+    if(reuse){
+      // 金額が変わったときは、以前の「支払い済み／受取済み」の回答は別の金額に対するものなので取り消す
+      if(reuse.amount !== t.amount){ reuse.paymentCompleted = false; reuse.receiptConfirmed = false; reuse.completedAt = null; }
+      reuse.amount = t.amount;
+      return reuse;
+    }
     return { id: uid('stl'), payer: t.payer, receiver: t.receiver, amount: t.amount, paymentCompleted:false, receiptConfirmed:false, completedAt:null };
   });
-  trip.settlements = newList;
+  trip.settlements = done.concat(open);
 }
- 
+
+// 保存済みの精算結果が、現在の実費・参加者から計算した内容と食い違っているか（実費を追加・編集したあとなど）
+function settlementsStale(trip){
+  const old = Array.isArray(trip.settlements) ? trip.settlements : [];
+  if(!old.length) return false;                    // まだ一度も計算していない場合は対象外
+  const open = old.filter(s=> !isSettlementDone(s));
+  const expected = computeOpenTransfers(trip);
+  if(expected.length !== open.length) return true;
+  return expected.some(t=> !open.find(s=> s.payer===t.payer && s.receiver===t.receiver && s.amount===t.amount));
+}
+
+// 指定した参加者が支払者になっている実費の件数（この件数がある人を削除すると、精算が正しく計算できなくなる）
+function paidExpenseCount(trip, memberId){
+  return (trip.expenses || []).filter(e=> e.payer === memberId).length;
+}
+/* ▲▲▲ 変更: 精算の再計算（ここまで） ▲▲▲ */
+
 function settlementStatus(s){
   return (s.paymentCompleted && s.receiptConfirmed) ? 'done' : 'unpaid';
 }
@@ -490,7 +530,7 @@ function topbar(showWho){
     </div>
     ${showWho && state.profile ? `
     <div class="who">
-      ${state.profile.name} さん<br>
+      ${escapeHtml(state.profile.name)} さん<br>
       <a href="index.html?edit=profile">プロフィールを編集</a>
     </div>` : ''}
   </div>`;
@@ -541,6 +581,7 @@ async function initTripPage(pageKey, renderFn, bindFn){
   if(!trip){ location.href = 'index.html'; return; }
  
   state.currentTripId = trip.id;
+  if(runTimeNotifications(trip)) await saveState();     // 追加: 日付などの条件で出す通知（入力リマインダー・支払い期限）
   __page = { key: pageKey, render: renderFn, bind: bindFn };
   renderTripPage();
 }
@@ -559,3 +600,165 @@ function renderTripPage(){
   __page.bind(trip);
 }
  
+
+
+/* =========================================================
+   レシート画像の保存（IndexedDB）
+   ・expense.html から移動して共通化（書き出し・読み込み、一時保存の片付けでも使うため）
+   ・旅行データ側には画像のID（receiptId）だけを持たせる。外部には送信されない。
+========================================================= */
+const RCP_DB = 'tabihimemo-receipts', RCP_STORE = 'receipts';
+function idbOpen(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(RCP_DB, 1);
+    req.onupgradeneeded = ()=> req.result.createObjectStore(RCP_STORE);
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function idbRun(mode, fn){
+  const db = await idbOpen();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(RCP_STORE, mode);
+    const req = fn(tx.objectStore(RCP_STORE));
+    tx.oncomplete = ()=>{ db.close(); resolve(req ? req.result : undefined); };
+    tx.onerror = tx.onabort = ()=>{ db.close(); reject(tx.error); };
+  });
+}
+const idbPut    = (id, blob)=> idbRun('readwrite', st=> st.put(blob, id));
+const idbGet    = (id)=>       idbRun('readonly',  st=> st.get(id));
+const idbDelete = (id)=>       idbRun('readwrite', st=> st.delete(id));
+const idbKeys   = ()=>         idbRun('readonly',  st=> st.getAllKeys());
+
+// 一時保存の画像（receiptTemp:true）は、このタブ（セッション）の間だけ残し、新しくサイトを開いたときに片付ける。
+// 最長でも24時間。「ずっと保存」にした画像（receiptTemp なし）は残る。
+const TEMP_RECEIPT_MAX_MS = 24 * 3600 * 1000;
+async function purgeTempReceipts(){
+  try{
+    const mk = sessionStorage.getItem('tabihimemo:session');
+    if(mk && Date.now() - Number(mk) < TEMP_RECEIPT_MAX_MS) return;       // 同じセッションの間は消さない
+    sessionStorage.setItem('tabihimemo:session', String(Date.now()));
+    let changed = false;
+    for(const t of state.trips){
+      for(const e of (t.expenses || [])){
+        if(e.receiptId && e.receiptTemp){
+          try{ await idbDelete(e.receiptId); }catch(_){}
+          delete e.receiptId; delete e.receiptTemp; changed = true;
+        }
+      }
+    }
+    if(changed) await saveState();
+  }catch(e){ console.warn('一時保存の画像の片付けに失敗しました', e); }
+}
+
+/* =========================================================
+   データの書き出し・読み込み（バックアップ／別の端末への引き継ぎ）
+   ・サーバーを使わず、ファイル（JSON）で受け渡す
+========================================================= */
+function blobToDataURL(blob){
+  return new Promise((resolve, reject)=>{ const r = new FileReader(); r.onload = ()=> resolve(r.result); r.onerror = ()=> reject(r.error); r.readAsDataURL(blob); });
+}
+function dataURLToBlob(url){
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url || '');
+  if(!m) throw new Error('画像データの形式が正しくありません');
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+}
+// 書き出すデータを組み立てる（includeImages: レシート画像も含めるか。画像は容量が大きくなる）
+async function buildBackup(includeImages){
+  const receipts = {};
+  let skipped = 0;
+  if(includeImages){
+    const ids = new Set();
+    state.trips.forEach(t=> (t.expenses || []).forEach(e=>{ if(e.receiptId) ids.add(e.receiptId); }));
+    for(const id of ids){
+      try{ const b = await idbGet(id); if(b) receipts[id] = await blobToDataURL(b); else skipped++; }catch(_){ skipped++; }
+    }
+  }
+  return { backup: { app:'tabihimemo', version:1, exportedAt:new Date().toISOString(),
+    profile: state.profile, currentUserId: state.currentUserId, trips: state.trips, receipts }, skippedImages: skipped };
+}
+function downloadJson(obj, filename){
+  const url = URL.createObjectURL(new Blob([JSON.stringify(obj)], { type:'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+// 読み込んだファイルを確認する（別の形式のファイルを誤って読み込まないように）
+function parseBackup(text){
+  let d;
+  try{ d = JSON.parse(text); }catch(e){ throw new Error('ファイルの形式が正しくありません（JSONとして読めません）'); }
+  if(!d || d.app !== 'tabihimemo' || !Array.isArray(d.trips)) throw new Error('旅費メモのバックアップファイルではありません');
+  if(d.version && d.version > 1) throw new Error('新しいバージョンのバックアップです。アプリを更新してから読み込んでください');
+  return d;
+}
+// mode: 'merge' = いまのデータに追加（同じ旅行は重複させない） / 'replace' = いまのデータをすべて置き換える
+async function applyBackup(d, mode){
+  const incoming = d.trips.filter(t=> t && typeof t === 'object' && t.id).map(t=> JSON.parse(JSON.stringify(t)));
+  let added = 0, skipped = 0;
+  if(mode === 'replace'){
+    state.trips = incoming; added = incoming.length;
+    if(d.profile) state.profile = d.profile;
+  } else {
+    for(const t of incoming){
+      const same = state.trips.find(x=> x.id === t.id);
+      if(same){
+        if(tripHash(same) === tripHash(t)){ skipped++; continue; }       // まったく同じ内容なら追加しない
+        t.id = uid('trip'); t.title = (t.title || '') + '（読み込み）';  // 同じIDで内容が違う場合は、別の旅行として追加する
+      }
+      state.trips.unshift(t); added++;
+    }
+    if(!state.profile && d.profile) state.profile = d.profile;
+  }
+  state.trips.forEach(normalizeTrip);
+  // 画像を戻す（すでにあるIDは上書きしない）
+  let imgs = 0;
+  for(const [id, url] of Object.entries(d.receipts || {})){
+    try{ const have = await idbGet(id); if(!have){ await idbPut(id, dataURLToBlob(url)); imgs++; } }catch(_){}
+  }
+  await saveState();
+  return { added, skipped, images: imgs };
+}
+
+/* =========================================================
+   通知（旅行ごとの履歴 trip.notificationHistory に積む）
+   ・type: 'settlement'（精算）/ 'reminder'（入力リマインダー）/ 'deadline'（支払い期限）
+   ・設定でOFFにした種類は発生しない。通知は、この端末の履歴にだけ残る（相手の端末には届かない）
+========================================================= */
+const PAYMENT_DEADLINE_DAYS = 7;       // 旅行終了日からこの日数が過ぎても精算が終わっていなければ「支払い期限」の通知を出す
+function pushTripNotification(trip, type, message, opts){
+  opts = opts || {};
+  if(!trip.notifications) trip.notifications = { settlement:true, reminder:true, deadline:true, message:true };
+  if(trip.notifications[type] === false) return false;
+  if(!Array.isArray(trip.notificationHistory)) trip.notificationHistory = [];
+  if(opts.key && trip.notificationHistory.some(n=> n.key === opts.key)) return false;     // 同じ通知は重ねて出さない
+  const item = {
+    id: 'notification_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    type, message, senderId: state.currentUserId, recipientId: null, createdAt: new Date().toISOString()
+  };
+  if(opts.key) item.key = opts.key;
+  trip.notificationHistory.unshift(item);
+  if(trip.notificationHistory.length > 200) trip.notificationHistory.length = 200;
+  try{ if('Notification' in window && Notification.permission === 'granted') new Notification('旅費メモ', { body: message }); }catch(_){}
+  return true;
+}
+// 日付などの条件で出す通知（旅行ページを開いたときに確認する。同じ内容は1日1回まで）
+function runTimeNotifications(trip){
+  const today = localDateStr();
+  let made = 0;
+  const hasExp = (trip.expenses || []).length > 0;
+  if(trip.endDate && today > trip.endDate && !hasExp){
+    made += pushTripNotification(trip, 'reminder', `「${trip.title}」の旅行が終了しましたが、実費がまだ記録されていません。`, { key:`reminder-empty-${trip.id}` }) ? 1 : 0;
+  }
+  if(trip.startDate && trip.endDate && today >= trip.startDate && today <= trip.endDate && !(trip.expenses || []).some(e=> e.date === today)){
+    made += pushTripNotification(trip, 'reminder', '今日の支出をまだ記録していません。レシートを撮影して記録しましょう。', { key:`reminder-day-${trip.id}-${today}` }) ? 1 : 0;
+  }
+  const open = (trip.settlements || []).filter(s=> !isSettlementDone(s));
+  if(trip.endDate && open.length){
+    const limit = localDateStr(new Date(new Date(trip.endDate + 'T00:00:00').getTime() + PAYMENT_DEADLINE_DAYS * 864e5));
+    if(today > limit) made += pushTripNotification(trip, 'deadline', `精算の支払いがまだ完了していません（未完了${open.length}件）。旅行終了から${PAYMENT_DEADLINE_DAYS}日が過ぎています。`, { key:`deadline-${trip.id}-${today}` }) ? 1 : 0;
+  }
+  return made;
+}
