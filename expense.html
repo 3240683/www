@@ -274,7 +274,9 @@ function cleanLine(l){
 function fixDigitMisreads(l){
   return l
     .replace(/(?<=\d)[OoQD]/g, '0').replace(/[OoQD](?=\d)/g, '0')
-    .replace(/(?<=\d)[Il|]|[Il|](?=\d{2})/g, '1');
+    .replace(/(?<=\d)[Il|]|[Il|](?=\d{2})/g, '1')
+    // 桁区切りの前後に入った空白を詰める（「1. 400」→「1.400」「¥1, 400」→「¥1,400」）
+    .replace(/(?<=\d)\s*([,.])\s*(?=\d{3}(?!\d))/g, '$1');
 }
 
 const RE_PLUS  = /合計|お買上|ご請求|請求額|領収金額|総計|TOTAL|Total|(?<![小少会])計/;
@@ -287,36 +289,48 @@ const RE_PHONE = /\d{2,4}-\d{2,4}-\d{3,4}/;
 // 変更: 年が印字されていない日付（「3月22日」「3/22(金) 11:32」「20XX年3月22日」）は、月日だけ拾って年を推定する
 let OCR_CTX = null;   // {tripStart, tripEnd}: 年の推定に使う旅行期間（runReceiptOcrOffline が設定）
 
-function inferYear(mo, d, ctx){
+function inferYear(mo, d, ctx, weekday){
   const today = new Date();
   const mk = y => new Date(y, mo-1, d);
-  const okDate = y => { const t = mk(y); return t.getMonth() === mo-1 && t.getDate() === d; };
+  // 日付として存在し、曜日（分かる場合）も合う年だけを候補にする
+  const ok = y => { const t = mk(y); return t.getMonth() === mo-1 && t.getDate() === d && (weekday < 0 || t.getDay() === weekday); };
   // 旅行期間が分かっていれば、その前後30日以内に収まる年を優先
   if(ctx && ctx.tripStart && ctx.tripEnd){
     const st = new Date(ctx.tripStart + 'T00:00:00'), en = new Date(ctx.tripEnd + 'T00:00:00');
     if(!isNaN(st) && !isNaN(en)){
       const lo = st.getTime() - 30*864e5, hi = en.getTime() + 30*864e5;
       for(const y of [st.getFullYear(), en.getFullYear()]){
-        if(okDate(y) && mk(y).getTime() >= lo && mk(y).getTime() <= hi) return y;
+        if(ok(y) && mk(y).getTime() >= lo && mk(y).getTime() <= hi) return y;
       }
     }
   }
-  // それ以外は「今日以前で最も新しい日付」になる年（レシートは過去〜今日の日付のため）
+  // それ以外は「今日以前で最も新しい日付」になる年（曜日が分かる場合は、曜日が合う年。レシートは過去〜今日の日付のため）
   const ty = today.getFullYear();
-  const y = (mk(ty).getTime() > today.getTime() + 864e5) ? ty - 1 : ty;
-  return okDate(y) ? y : null;
+  for(let y = ty; y >= ty - 8; y--){
+    if(ok(y) && mk(y).getTime() <= today.getTime() + 864e5) return y;
+  }
+  return null;
 }
 
 function findDates(rawLine){
   const line = fixDigitMisreads(cleanLine(rawLine));
   const hasTime = /\d{1,2}\s*:\s*\d{2}/.test(line);
-  const hasWeekday = /[（(]\s*[月火水木金土日]\s*[)）]/.test(line);
+  const wdm = line.match(/[（(]\s*([日月火水木金土])\s*[)）]/);
+  const hasWeekday = !!wdm;
+  const weekday = wdm ? '日月火水木金土'.indexOf(wdm[1]) : -1;      // 印字された曜日（日=0 … 土=6）。無ければ -1
   const out = [];
   const pad = n => String(n).padStart(2,'0');
   const valid = (y,mo,d)=> mo>=1 && mo<=12 && d>=1 && d<=31 && y>=2000 && y<=2100;
   const push = (y,mo,d,score,inferred)=>{
     if(!valid(y,mo,d)) return;
-    out.push({ value: `${y}-${pad(mo)}-${pad(d)}`, score: score + (hasTime ? 2 : 0), inferred: !!inferred });
+    // 読み取った日付が、印字された曜日と合うかで検証する（OCRの読み間違いで日付が1桁ずれた場合に気づける）
+    let wd = '';
+    if(weekday >= 0 && inferred) wd = 'match';       // 年を推定した日付は、曜日が合う年を選んでいる
+    if(weekday >= 0 && !inferred){
+      wd = (new Date(y, mo-1, d).getDay() === weekday) ? 'match' : 'mismatch';
+      score += wd === 'match' ? 3 : -3;
+    }
+    out.push({ value: `${y}-${pad(mo)}-${pad(d)}`, score: score + (hasTime ? 2 : 0), inferred: !!inferred, wd });
   };
   let m;
   const re1 = /(?<!\d)(20\d{2}|\d{2})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/g;
@@ -334,7 +348,7 @@ function findDates(rawLine){
   if(!out.length){
     const addMD = (mo, d, score)=>{
       if(mo < 1 || mo > 12 || d < 1 || d > 31) return;
-      const y = inferYear(mo, d, OCR_CTX);
+      const y = inferYear(mo, d, OCR_CTX, weekday);
       if(y) push(y, mo, d, score, true);
     };
     const re4 = /(?<!\d)(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;                 // 3月22日
@@ -365,19 +379,26 @@ function amountTokens(rawLine){
   while((m = re.exec(line))){
     const before = line.slice(0, m.index).slice(-1);
     const after  = line.slice(re.lastIndex);
-    if(before === '@' || before === '-' || /^\s*-/.test(after)) continue;
+    const charBefore2 = line.slice(0, m.index).slice(-2, -1);
+    if(before === '@') continue;                                              // 単価（@420）は除外
+    if((before === '-' && /\d/.test(charBefore2)) || /^\s*-\s*\d/.test(after)) continue;   // 数字ではさまれた「-」（6-80-21）は除外
+    const trailingDash = /^\s*[-ー―‐−]\s*$/.test(after);                      // 行末の「-」は金額の印（¥1,400-）
     if(/^\s*[点個枚番号%]/.test(after)) continue;
     const value = parseInt(m[2].replace(/[,.]/g,''), 10);
     if(!(value >= 1 && value <= 9999999)) continue;
-    tokens.push({ value, hasYen: !!(m[1] || m[3]), hasComma: /[,.]/.test(m[2]) });
+    tokens.push({ value, hasYen: !!(m[1] || m[3]), hasComma: /[,.]/.test(m[2]), trailingDash });
   }
   return { line, tokens };
 }
 function lineFlags(line){
   const hasPlus = RE_PLUS.test(line);
+  // 「N点」があり、商品名らしい日本語が（ほとんど）無い行は、合計／小計の行（例: 「合計/ 23点 ¥1,400」が「atl/ 23 点 ¥1.400」と崩れた場合）
+  const rest = line.replace(/[\d\s,.¥\\\/:()（）\-]/g, '').replace(/[点計合小総]/g, '');
+  const totalLike = /\d+\s*点/.test(line) && (rest.match(/[\u3040-\u30ff\u4e00-\u9fff]/g) || []).length <= 1;
   return {
     hasPlus,
     hasSub: !hasPlus && RE_SUB.test(line),
+    totalLike,
     minus: hasPlus ? RE_MINUS_STRICT.test(line) : RE_MINUS.test(line)
   };
 }
@@ -397,7 +418,8 @@ function extractAmountCandidates(rawLines){
       let s = 0;
       if(t.hasYen) s += 4;
       if(t.hasComma) s += 1;
-      if(f.hasPlus) s += 10; else if(f.hasSub) s += 3;
+      if(f.hasPlus) s += 10; else if(f.hasSub) s += 3; else if(f.totalLike && !f.minus) s += 6;
+      if(t.trailingDash) s += 6;       // 領収証の金額欄「¥1,400-」のように、行末に「-」が付く金額は合計の可能性が高い
       if(f.minus) s -= 8;
       if(!t.hasYen && !t.hasComma && String(t.value).length <= 2) s -= 12;
       let e = map.get(t.value);
@@ -405,7 +427,7 @@ function extractAmountCandidates(rawLines){
       e.count++;
       e.score = Math.max(e.score, s);
       if(t.hasYen || t.hasComma) e.solid = true;
-      if(f.hasPlus) e.tag = '合計'; else if(f.hasSub && !e.tag) e.tag = '小計';
+      if(f.hasPlus || (f.totalLike && !f.hasSub && !f.minus)) e.tag = '合計'; else if(f.hasSub && !e.tag) e.tag = '小計';
     });
   });
   const arr = [...map.values()];
@@ -419,6 +441,7 @@ function extractAmountCandidates(rawLines){
     const c = arr.find(x=> x.value === a.value - b.value);
     if(!c || c === a || c === b) return;
     if(!(c.score > a.score && c.score > b.score)) return;
+    if(c.tag !== '合計' && c.tag !== '小計') return;     // 合計／小計の根拠が無い数字は、偶然の引き算の一致で昇格させない
     if(!best || c.score > best.c.score) best = { a, b, c };
   }));
   if(best){ best.c.score += 8; best.c.tag = '合計'; best.a.flag = true; best.b.flag = true; }
@@ -492,59 +515,105 @@ function analyzeLines(lines, ctx){
     lines
   };
 }
+// 細長いレシート（縦横比が2.2倍超）は、上下に分割して読む。
+// 全体を1回で読むと、下の方（合計・税額の行）が丸ごと読み飛ばされることがあるため。
+// variant=1 のときは、別の分割位置（より細かく）で読み直す。
+function planStrips(w, h, variant){
+  const ratio = h / w;
+  if(!(ratio > 2.2)) return null;
+  const stripRatio = variant === 1 ? 1.0 : 1.5;            // 1ブロックの縦横比
+  const n = Math.max(2, Math.ceil(ratio / stripRatio));
+  const core = h / n, pad = core * 0.1;                    // 前後に1割ずつ重ねて、境目の行を読み落とさない
+  const rects = [];
+  for(let i = 0; i < n; i++){
+    const y0 = Math.max(0, Math.round(i * core - pad));
+    const y1 = Math.min(h, Math.round((i + 1) * core + pad));
+    rects.push({ y: y0, h: y1 - y0 });
+  }
+  return { n, rects };
+}
 /* ===END-EXTRACT=== 変更: 金額・日付の候補抽出ロジック（ここまで） */
 
 // 変更: 画像の前処理。縮小しすぎず（長辺3000px前後）、グレースケール化だけを行う。
 // ※ コントラストの強制伸張は日付の「/」が「7」に化ける原因になったため行わない
-async function preprocessImage(file, maxSide){
+function toGrayscale(ctx, w, h){
+  const img = ctx.getImageData(0, 0, w, h), d = img.data;
+  for(let i=0; i<d.length; i+=4){
+    const g = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
+    d[i] = d[i+1] = d[i+2] = g;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+async function decodeImage(file){
+  try{ return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch(e){ return await createImageBitmap(file); }
+}
+
+// 読み取り用の画像（canvas）の配列を作る。
+//  ・普通の画像: 1枚（長辺3000px前後）
+//  ・細長いレシート: 上下に分割した複数枚（各ブロックの幅を1600〜2000pxにそろえる。小さい画像は拡大）
+async function preprocessImages(file, maxSide, variant){
   try{
-    let bmp;
-    try{ bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
-    catch(e){ bmp = await createImageBitmap(file); }
-    const longSide = Math.max(bmp.width, bmp.height);
-    let target = Math.min(longSide, maxSide);
-    if(longSide < 2400) target = 2400;          // 小さい画像は拡大
-    const scale = target / longSide;
-    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bmp, 0, 0, w, h);
-    const img = ctx.getImageData(0, 0, w, h);
-    const d = img.data;
-    for(let i=0; i<d.length; i+=4){
-      const g = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
-      d[i] = d[i+1] = d[i+2] = g;
+    const bmp = await decodeImage(file);
+    const plan = planStrips(bmp.width, bmp.height, variant);
+    if(!plan){
+      const longSide = Math.max(bmp.width, bmp.height);
+      let target = Math.min(longSide, maxSide);
+      if(longSide < 2400) target = 2400;          // 小さい画像は拡大
+      const scale = target / longSide;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      toGrayscale(ctx, canvas.width, canvas.height);
+      return [canvas];
     }
-    ctx.putImageData(img, 0, 0);
-    return canvas;
+    const targetW = Math.min(2000, Math.max(1600, bmp.width));
+    const scale = targetW / bmp.width;
+    return plan.rects.map(r=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW; canvas.height = Math.round(r.h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bmp, 0, r.y, bmp.width, r.h, 0, 0, canvas.width, canvas.height);
+      toGrayscale(ctx, canvas.width, canvas.height);
+      return canvas;
+    });
   }catch(e){
     console.warn('前処理に失敗したため元画像で読み取ります', e);
-    return file;
+    return [file];
   }
 }
 
-// 変更: 1回目（長辺3000px）で金額・日付が十分に確からしければそのまま採用。
-// 日付が無い／金額の確からしさが低い場合だけ、解像度を変えて2回目を読み取って結果を統合する。
+// 変更: 1回目で金額・日付が十分に確からしければそのまま採用。
+// 日付が無い／金額の確からしさが低い場合だけ、読み方を変えて2回目を読み取って結果を統合する。
+// 細長いレシートは上下に分割して順に読み、境目で重なった行は重複を除く。
 async function runReceiptOcrOffline(file, onStatus, ctx){
   let label = '読み取っています…';
+  let partInfo = '';
   const worker = await Tesseract.createWorker('jpn+eng', 1, {
     logger: (m)=>{
-      if(onStatus && m.status === 'recognizing text') onStatus(`${label}${Math.round((m.progress||0)*100)}%`);
+      if(onStatus && m.status === 'recognizing text') onStatus(`${label}${partInfo}${Math.round((m.progress||0)*100)}%`);
     }
   });
   try{
-    const pass = async (maxSide)=>{
-      const img = await preprocessImage(file, maxSide);
-      const { data } = await worker.recognize(img);
-      return (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
+    const pass = async (maxSide, variant)=>{
+      const imgs = await preprocessImages(file, maxSide, variant);
+      const lines = [];
+      for(let i = 0; i < imgs.length; i++){
+        partInfo = imgs.length > 1 ? `（${i+1}/${imgs.length}）` : '';
+        const { data } = await worker.recognize(imgs[i]);
+        const part = (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
+        const tail = new Set(lines.slice(-6).map(cleanLine));          // 前のブロックの末尾と同じ行（重なり部分）は省く
+        part.forEach(l=>{ const c = cleanLine(l); if(!(c.length >= 4 && tail.has(c))) lines.push(l); });
+      }
+      return lines;
     };
-    let lines = await pass(3000);
+    let lines = await pass(3000, 0);
     let result = analyzeLines(lines, ctx);
     const weak = !result.dates.length || !result.amounts.length || result.amounts[0].score < 12;
     if(weak){
       label = '精度を上げるため再読み取りしています…';
-      lines = lines.concat(await pass(4000));
+      lines = lines.concat(await pass(4000, 1));
       result = analyzeLines(lines, ctx);
     }
     return result;
@@ -569,7 +638,8 @@ function renderOcrCandidates(result){
     </button>`).join('');
   // 日付: 「読み込んだ日（今日）」を先頭に常に出し、その後ろにレシートから読み取った候補を並べる
   const dateItems = [{ value: today, label: '読み込んだ日' }]
-    .concat(result.dates.filter(c=> c.value !== today).map(c=> ({ value: c.value, label: c.inferred ? '年は推定' : 'レシートの日付' })));
+    .concat(result.dates.filter(c=> c.value !== today).map(c=> ({ value: c.value,
+      label: c.inferred ? (c.wd === 'match' ? '年は曜日から推定' : '年は推定') : (c.wd === 'mismatch' ? '曜日が合いません' : (c.wd === 'match' ? 'レシートの日付（曜日一致）' : 'レシートの日付')) })));
   const dateChips = dateItems.map(c=>`
     <button type="button" class="cand-chip ${c.value === curDate ? 'selected' : ''}" data-kind="date" data-value="${c.value}">
       ${c.value.replace(/-/g,'/')}<span class="src">${c.label}</span>
@@ -668,14 +738,20 @@ function bindExpenseTab(trip){
         { tripStart: trip.startDate, tripEnd: trip.endDate });
       if(result.amounts.length) document.getElementById('ex-amount').value = result.amounts[0].value.toLocaleString('ja-JP');
       // 変更: レシートに年つきの日付があればそれを使い、無ければ「読み込んだ日（今日）」を既定にする
-      const explicitDate = result.dates.find(c=> !c.inferred);
+      const reliable = result.dates.filter(c=> !c.inferred && c.wd !== 'mismatch');       // 曜日と矛盾する日付は自動入力しない
+      let explicitDate = reliable[0] || null;
+      const tied = reliable.length > 1 && reliable[0].score - reliable[1].score < 2;      // 候補が拮抗しているときも自動入力しない
+      if(tied) explicitDate = null;
+      const hadMismatch = result.dates.some(c=> !c.inferred && c.wd === 'mismatch');
       if(explicitDate) document.getElementById('ex-date').value = explicitDate.value;
       else if(!editingNow) document.getElementById('ex-date').value = todayStr();
       document.getElementById('ex-memo').value = result.store || 'OCRで読み取り（要確認）';
       renderOcrCandidates(result);
       statusEl.textContent = explicitDate
         ? '読み取り完了。一番有力な候補を入力しました。違う場合は下の候補から選んでください。'
-        : '読み取り完了。レシートから年つきの日付が見つからなかったため、支払日は読み込んだ日（今日）にしました。別の日付にする場合は下の候補から選んでください。';
+        : (tied ? '読み取り完了。日付の候補が複数あり決められなかったため、支払日は読み込んだ日（今日）にしました。下の候補から選んでください。'
+          : hadMismatch ? '読み取り完了。読み取った日付がレシートの曜日と合わなかったため、支払日は読み込んだ日（今日）にしました。下の候補を確認してください。'
+          : '読み取り完了。レシートから年つきの日付が見つからなかったため、支払日は読み込んだ日（今日）にしました。別の日付にする場合は下の候補から選んでください。');
       showToast('レシートを読み取りました');
     }catch(err){
       console.error(err);
