@@ -438,6 +438,13 @@ function openTripFormModal(tripId) {
             id: state.currentUserId,
             name: state.profile.name,
             owner: true
+            // プロフィール情報を初期値として引き継ぐ
+  drink: !!state.profile.drink,
+  smoke: !!state.profile.smoke,
+
+  // 運転者かどうかは旅行ごとに設定する
+  role: ''
+
           }],
           estimate: {
             transport: transport.roundTripTotal,
