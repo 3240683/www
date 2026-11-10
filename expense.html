@@ -22,6 +22,22 @@
   .cand-chip.selected{ border-color:var(--accent); background:#FBF3EE; box-shadow:0 0 0 1px var(--accent) inset; }
   .ocr-all{ text-align:left; margin-top:14px; font-size:12.5px; color:var(--ink-soft); }
   .ocr-all summary{ cursor:pointer; }
+  /* 変更: カメラ撮影・レシート画像の保存用 */
+  .ocr-actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px; }
+  .receipt-preview{ display:flex; gap:14px; align-items:center; justify-content:center; flex-wrap:wrap; margin-top:12px; text-align:left; }
+  .receipt-thumb-img{ max-height:140px; max-width:160px; border:1px solid var(--line); border-radius:4px; cursor:zoom-in; background:#fff; }
+  .receipt-preview label{ font-size:12.5px; color:var(--ink-soft); display:block; max-width:280px; line-height:1.6; }
+  .receipt-saved{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .camera-box video{ width:100%; max-height:62vh; background:#000; border-radius:4px; }
+  /* 変更: ボタン配置 — カメラは最上部に大きく、「実費を追加」は画面下に固定して常に押せるようにする */
+  .camera-hero{ width:100%; font-size:16px; padding:14px 16px; }
+  .ocr-sub{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12.5px; color:var(--ink-soft); }
+  .sticky-actions{
+    position:sticky; bottom:0; z-index:5; display:flex; gap:10px; flex-wrap:wrap;
+    background:var(--card, #fff); border-top:1px solid var(--line);
+    margin:16px -20px -20px; padding:12px 20px; border-radius:0 0 var(--radius-card, 6px) var(--radius-card, 6px);
+  }
+  .pay-hint{ font-size:12px; color:var(--ink-soft); margin-top:4px; }
 </style>
 </head>
 <body>
@@ -33,47 +49,212 @@
 /* =========================================================
    expense.html: 3.5 実費登録画面（オフラインOCR／行選択機能つき）
 ========================================================= */
+/* ▼▼▼ 変更: カメラ撮影とレシート画像の保存（ここから） ▼▼▼ */
+// 保存したレシート画像はブラウザ内のIndexedDBに入れる（localStorageは約5MBまでで画像には足りないため）。
+// 旅行データ側には画像のID（receiptId）だけを持たせる。外部には送信されない。
+const RCP_DB = 'tabihimemo-receipts', RCP_STORE = 'receipts';
+function idbOpen(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(RCP_DB, 1);
+    req.onupgradeneeded = ()=> req.result.createObjectStore(RCP_STORE);
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function idbRun(mode, fn){
+  const db = await idbOpen();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(RCP_STORE, mode);
+    const req = fn(tx.objectStore(RCP_STORE));
+    tx.oncomplete = ()=>{ db.close(); resolve(req ? req.result : undefined); };
+    tx.onerror = tx.onabort = ()=>{ db.close(); reject(tx.error); };
+  });
+}
+const idbPut    = (id, blob)=> idbRun('readwrite', st=> st.put(blob, id));
+const idbGet    = (id)=>       idbRun('readonly',  st=> st.get(id));
+const idbDelete = (id)=>       idbRun('readwrite', st=> st.delete(id));
+const idbKeys   = ()=>         idbRun('readonly',  st=> st.getAllKeys());
+
+let pendingReceipt = null;      // 撮影／選択したばかりで、まだ保存していない画像（メモリ上のみ。ページを離れると消える）
+let objectUrls = [];            // 画面表示用に作ったURL（再描画のたびに解放する）
+function makeUrl(blob){ const u = URL.createObjectURL(blob); objectUrls.push(u); return u; }
+function revokeObjectUrls(){ objectUrls.forEach(u=> { try{ URL.revokeObjectURL(u); }catch(e){} }); objectUrls = []; }
+
+// 保存用に縮小（長辺1600px・JPEG）。1枚あたり約300KB。失敗したら元の画像をそのまま使う
+async function compressForStorage(file){
+  try{
+    let bmp;
+    try{ bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch(e){ bmp = await createImageBitmap(file); }
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    return await new Promise(res=> canvas.toBlob(b=> res(b || file), 'image/jpeg', 0.75));
+  }catch(e){
+    console.warn('画像の縮小に失敗したため元の画像を使います', e);
+    return file;
+  }
+}
+
+// どの旅行にも使われていない画像（記録や旅行を削除した後に残ったもの）を片付ける。ページを開いたとき1回だけ
+let receiptGcDone = false;
+async function gcReceipts(){
+  if(receiptGcDone || !state.trips.length) return;     // 旅行データが空のときは誤って消さないよう何もしない
+  receiptGcDone = true;
+  try{
+    const used = new Set();
+    state.trips.forEach(t=> (t.expenses||[]).forEach(e=>{ if(e.receiptId) used.add(e.receiptId); }));
+    for(const k of await idbKeys()){ if(!used.has(k)) await idbDelete(k); }
+  }catch(e){ console.warn('画像の整理に失敗しました', e); }
+}
+
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+// PC向け: ブラウザのカメラ画面（Webカメラ）で撮影する。撮影したらカメラはすぐ停止する
+async function openCameraModal(onCapture){
+  const root = document.getElementById('modal-root');
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false
+    });
+  }catch(e){
+    showToast(e && e.name === 'NotAllowedError'
+      ? 'カメラの使用が許可されていません。ブラウザのアドレスバーの設定から許可してください'
+      : 'カメラを起動できませんでした。「画像ファイルから読み取る」を使ってください');
+    return;
+  }
+  root.innerHTML = `
+  <div class="modal-overlay" id="cam-overlay">
+    <div class="modal camera-box" style="max-width:720px;">
+      <h2>レシートを撮影</h2>
+      <p class="muted">レシートが画面いっぱいに写るようにして「撮影」を押してください。</p>
+      <video id="cam-video" autoplay playsinline muted></video>
+      <div class="btn-row">
+        <button class="btn accent" id="cam-shot">撮影して読み取る</button>
+        <button class="btn secondary" id="cam-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>`;
+  const video = document.getElementById('cam-video');
+  video.srcObject = stream;
+  const close = ()=>{ stream.getTracks().forEach(t=> t.stop()); root.innerHTML = ''; };
+  document.getElementById('cam-cancel').onclick = close;
+  document.getElementById('cam-overlay').addEventListener('click', (e)=>{ if(e.target.id === 'cam-overlay') close(); });
+  document.getElementById('cam-shot').onclick = ()=>{
+    if(!video.videoWidth){ showToast('カメラの準備中です。少し待ってからもう一度押してください'); return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(b=>{
+      close();
+      if(b) onCapture(new File([b], 'receipt.jpg', { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.92);
+  };
+}
+
+// 保存済みレシート画像の表示（拡大・ダウンロード・削除）
+async function openReceiptViewer(exp, onDeleted){
+  let blob = null;
+  try{ blob = await idbGet(exp.receiptId); }catch(e){}
+  if(!blob){ showToast('画像が見つかりません（別の端末やブラウザで保存した記録かもしれません）'); return; }
+  const url = makeUrl(blob);
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+  <div class="modal-overlay" id="rv-overlay">
+    <div class="modal" style="max-width:640px;text-align:center;">
+      <img src="${url}" alt="レシート画像" style="max-width:100%;max-height:70vh;border:1px solid var(--line);">
+      <div class="btn-row" style="justify-content:center;">
+        <a class="btn secondary" href="${url}" download="receipt_${exp.date||'image'}.jpg">ダウンロード</a>
+        <button class="btn ghost" id="rv-delete">画像を削除</button>
+        <button class="btn secondary" id="rv-close">閉じる</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('rv-close').onclick = ()=>{ root.innerHTML = ''; };
+  document.getElementById('rv-overlay').addEventListener('click', (e)=>{ if(e.target.id === 'rv-overlay') root.innerHTML = ''; });
+  document.getElementById('rv-delete').onclick = ()=> confirmDeleteReceipt(exp, onDeleted);
+}
+function confirmDeleteReceipt(exp, onDeleted){
+  openYesNoModal('このレシート画像を削除しますか？（記録そのものは残ります）', async ()=>{
+    try{ await idbDelete(exp.receiptId); }catch(e){}
+    delete exp.receiptId;
+    if(onDeleted) onDeleted(); else rerenderPage();
+    showToast('レシート画像を削除しました');
+  });
+}
+/* ▲▲▲ 変更: カメラ撮影とレシート画像の保存（ここまで） ▲▲▲ */
+
+// 変更: 支払日の既定値は「読み込んだ日（今日）」。端末の現地時間で YYYY-MM-DD にする
+function todayStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* ▼▼▼ 変更: 保存済みの実費を編集できるようにする（ここから） ▼▼▼ */
+let editingId = null;   // 編集中の実費ID（nullなら新規追加モード）
+
 function renderExpenseTab(trip){
+  const editing = editingId ? trip.expenses.find(x=>x.id===editingId) : null;
+  if(editingId && !editing) editingId = null;
+  const ev = editing || { category:'transport', actual:'', payer:'', date: todayStr(), memo:'' };   // フォームの初期値
+
   const rows = trip.expenses.map(ex=>`
-    <tr>
+    <tr ${ex.id===editingId ? 'style="background:#FBF3EE;"' : ''}>
       <td>${categoryLabel(ex.category)}</td>
       <td class="amount">${yen(ex.actual)}</td>
       <td>${escapeHtml(memberName(trip, ex.payer))}</td>
       <td>${ex.date||'-'}</td>
       <td class="muted">${escapeHtml(ex.memo||'')}</td>
-      <td><button class="icon-btn btn-del-expense" data-id="${ex.id}">🗑</button></td>
+      <td style="white-space:nowrap;">
+        ${ex.receiptId ? `<button class="icon-btn btn-view-receipt" data-id="${ex.id}" title="レシート画像を見る">🧾</button>` : ''}
+        <button class="icon-btn btn-edit-expense" data-id="${ex.id}" title="編集">✎</button>
+        <button class="icon-btn btn-del-expense" data-id="${ex.id}" title="削除">🗑</button>
+      </td>
     </tr>`).join('');
-  const memberOptions = trip.members.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
-  const catOptions = ESTIMATE_CATEGORIES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+  const memberOptions = trip.members.map(m=>`<option value="${m.id}" ${m.id===ev.payer?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
+  const catOptions = ESTIMATE_CATEGORIES.map(([k,l])=>`<option value="${k}" ${k===ev.category?'selected':''}>${l}</option>`).join('');
 
   return `
   <div class="card">
-    <div class="section-title"><h2>実費を記録</h2></div>
-    <div class="ocr-drop">
-      レシート画像をアップロードすると、端末内の画像認識（無料・オフライン対応）でテキストを読み取ります。読み取った内容から、金額と日付の候補だけを自動で抽出します。一番有力な候補が入力されるので、違う場合は候補をクリックして選び直してください。<br>
-      <div class="btn-row" style="margin-top:10px;">
-        <button type="button" class="btn accent" id="btn-open-camera">📷 カメラを起動して撮影</button>
-        <button type="button" class="btn secondary" id="btn-select-image">画像を選択</button>
-      </div>
-      <input type="file" id="ocr-camera" accept="image/*" capture="environment" hidden>
-      <input type="file" id="ocr-file" accept="image/*" hidden>
-      <div class="muted" style="margin-top:6px;">スマートフォンではカメラが起動します。端末やブラウザによっては撮影方法の選択画面が表示されます。</div>
-      <div id="ocr-status" class="muted" style="margin-top:6px;"></div>
-      <div id="ocr-lines" style="margin-top:10px;"></div>
+    <div class="section-title"><h2>${editing ? '実費を編集' : '実費を記録'}</h2>${editing ? '<span class="muted">一覧で選んだ記録を編集中です</span>' : ''}</div>
+    <button type="button" class="btn accent camera-hero" id="btn-camera">📷 カメラで撮影して読み取る</button>
+    <div class="ocr-sub">
+      <button type="button" class="btn ghost sm" id="btn-pick-file">画像ファイルから読み取る</button>
+      <span>金額と日付を自動で入力します。撮影した画像は読み取りにだけ使い、初期設定では保存されません。</span>
     </div>
+    <input type="file" id="ocr-file" accept="image/*" hidden>
+    <input type="file" id="ocr-camera" accept="image/*" capture="environment" hidden>
+    <div id="ocr-status" class="muted" style="margin-top:10px;"></div>
+    <div id="receipt-preview"></div>
+    <div id="ocr-lines" style="margin:10px 0 18px;"></div>
     <div class="grid3">
       <div class="field"><label>費目</label><select id="ex-category">${catOptions}</select></div>
-      <div class="field"><label>金額 <span style="color:var(--accent)">*</span></label><input type="text" inputmode="numeric" id="ex-amount" placeholder="円" oninput="formatMoneyInput(this)"></div>
-      <div class="field"><label>支払者</label><select id="ex-payer">${memberOptions}</select></div>
+      <div class="field"><label>金額 <span style="color:var(--accent)">*</span></label><input type="text" inputmode="numeric" id="ex-amount" placeholder="円" value="${ev.actual ? Number(ev.actual).toLocaleString('ja-JP') : ''}" oninput="formatMoneyInput(this)"></div>
+      <div class="field"><label>支払者</label><select id="ex-payer">${memberOptions}</select>
+        <div class="pay-hint">参加者の追加は<a href="invite.html?trip=${trip.id}">招待ページ</a>で行えます</div></div>
     </div>
     <div class="grid2">
-      <div class="field"><label>支払日 <span style="color:var(--accent)">*</span></label><input type="date" id="ex-date"></div>
-      <div class="field"><label>メモ</label><input type="text" id="ex-memo" placeholder="任意"></div>
+      <div class="field"><label>支払日 <span style="color:var(--accent)">*</span></label><input type="date" id="ex-date" value="${ev.date||''}"></div>
+      <div class="field"><label>メモ</label><input type="text" id="ex-memo" placeholder="任意" value="${escapeHtml(ev.memo||'')}"></div>
     </div>
-    <div class="btn-row"><button class="btn accent" id="btn-add-expense">実費を追加</button></div>
+    ${editing && editing.receiptId ? `
+    <div class="field">
+      <label>保存済みのレシート画像</label>
+      <div class="receipt-saved">
+        <img class="receipt-thumb-img" id="saved-receipt-img" alt="レシート画像（クリックで拡大）">
+        <button type="button" class="btn ghost sm" id="btn-del-receipt">この画像を削除</button>
+      </div>
+    </div>` : ''}
+    <div class="sticky-actions">
+      <button class="btn accent" id="btn-add-expense">${editing ? '変更を保存' : '実費を追加'}</button>
+      ${editing ? '<button class="btn secondary" id="btn-cancel-edit">キャンセル</button>' : ''}
+    </div>
   </div>
   <div class="card">
-    <div class="section-title"><h2>記録一覧</h2></div>
+    <div class="section-title"><h2>記録一覧</h2>${trip.expenses.length ? '<span class="muted">✎ で内容を修正できます</span>' : ''}</div>
     ${trip.expenses.length ? `
     <table class="data-table">
       <thead><tr><th>費目</th><th>金額</th><th>支払者</th><th>支払日</th><th>メモ</th><th></th></tr></thead>
@@ -103,15 +284,39 @@ const RE_MINUS = /預|釣|現金|ポイント|対象|税|軽減|割引|クーポ
 const RE_PHONE = /\d{2,4}-\d{2,4}-\d{3,4}/;
 
 // ---- 日付: 2026/09/25・2026年9月25日・26.09.25・令和8年9月25日、「/」が「7」などに誤読された 2026709/25 にも対応 ----
+// 変更: 年が印字されていない日付（「3月22日」「3/22(金) 11:32」「20XX年3月22日」）は、月日だけ拾って年を推定する
+let OCR_CTX = null;   // {tripStart, tripEnd}: 年の推定に使う旅行期間（runReceiptOcrOffline が設定）
+
+function inferYear(mo, d, ctx){
+  const today = new Date();
+  const mk = y => new Date(y, mo-1, d);
+  const okDate = y => { const t = mk(y); return t.getMonth() === mo-1 && t.getDate() === d; };
+  // 旅行期間が分かっていれば、その前後30日以内に収まる年を優先
+  if(ctx && ctx.tripStart && ctx.tripEnd){
+    const st = new Date(ctx.tripStart + 'T00:00:00'), en = new Date(ctx.tripEnd + 'T00:00:00');
+    if(!isNaN(st) && !isNaN(en)){
+      const lo = st.getTime() - 30*864e5, hi = en.getTime() + 30*864e5;
+      for(const y of [st.getFullYear(), en.getFullYear()]){
+        if(okDate(y) && mk(y).getTime() >= lo && mk(y).getTime() <= hi) return y;
+      }
+    }
+  }
+  // それ以外は「今日以前で最も新しい日付」になる年（レシートは過去〜今日の日付のため）
+  const ty = today.getFullYear();
+  const y = (mk(ty).getTime() > today.getTime() + 864e5) ? ty - 1 : ty;
+  return okDate(y) ? y : null;
+}
+
 function findDates(rawLine){
   const line = fixDigitMisreads(cleanLine(rawLine));
   const hasTime = /\d{1,2}\s*:\s*\d{2}/.test(line);
+  const hasWeekday = /[（(]\s*[月火水木金土日]\s*[)）]/.test(line);
   const out = [];
   const pad = n => String(n).padStart(2,'0');
   const valid = (y,mo,d)=> mo>=1 && mo<=12 && d>=1 && d<=31 && y>=2000 && y<=2100;
-  const push = (y,mo,d,score)=>{
+  const push = (y,mo,d,score,inferred)=>{
     if(!valid(y,mo,d)) return;
-    out.push({ value: `${y}-${pad(mo)}-${pad(d)}`, score: score + (hasTime ? 2 : 0) });
+    out.push({ value: `${y}-${pad(mo)}-${pad(d)}`, score: score + (hasTime ? 2 : 0), inferred: !!inferred });
   };
   let m;
   const re1 = /(?<!\d)(20\d{2}|\d{2})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/g;
@@ -124,6 +329,21 @@ function findDates(rawLine){
   while((m = re2.exec(line))) push(2018 + Number(m[1]), Number(m[2]), Number(m[3]), 3);
   const re3 = /(20\d{2})[^\d\s]{0,2}[71lI|]?\s*(0[1-9]|1[0-2])\s*[\/\-.月7]?\s*(0[1-9]|[12]\d|3[01])/g;
   while((m = re3.exec(line))) push(Number(m[1]), Number(m[2]), Number(m[3]), 1);
+
+  // 年が読めない／印字されていない日付（上の形式で見つからなかった行だけ）
+  if(!out.length){
+    const addMD = (mo, d, score)=>{
+      if(mo < 1 || mo > 12 || d < 1 || d > 31) return;
+      const y = inferYear(mo, d, OCR_CTX);
+      if(y) push(y, mo, d, score, true);
+    };
+    const re4 = /(?<!\d)(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;                 // 3月22日
+    while((m = re4.exec(line))) addMD(Number(m[1]), Number(m[2]), hasWeekday ? 2 : 1);
+    if(!out.length && (hasTime || hasWeekday)){                              // 3/22(金) 11:32 （時刻か曜日が同じ行にある場合のみ）
+      const re5 = /(?<![\d\/.])(\d{1,2})\s*[\/.]\s*(\d{1,2})(?![\d\/.])/g;
+      while((m = re5.exec(line))) addMD(Number(m[1]), Number(m[2]), 1);
+    }
+  }
   return out;
 }
 function extractDateCandidates(rawLines){
@@ -213,17 +433,27 @@ function extractAmountCandidates(rawLines){
   const sorted = arr.filter(c=> !c.flag).sort((a,b)=> b.score - a.score);
   const strong = sorted.filter(c=> c.score > 0 && !c.tax);
   const topScore = strong.length ? strong[0].score : 0;
-  const shown = strong.filter(c=> c.score >= topScore * 0.3);   // 1位の3割未満のスコアは誤読ノイズとして非表示
+  let shown = strong.filter(c=> c.score >= topScore * 0.3);   // 1位の3割未満のスコアは誤読ノイズとして非表示
+  // 1位が「合計」と確定しているときは、合計／小計のラベルが付いた候補だけを残す（商品の単価などを出さない）
+  if(shown.length && shown[0].tag === '合計') shown = shown.filter(c=> c.tag === '合計' || c.tag === '小計');
   return (shown.length ? shown : sorted.slice(0, 2)).slice(0, 3)
     .map(c=> ({ value:c.value, score:c.score, label: c.tag || (c.count >= 2 ? '複数行に登場' : '') }));
 }
 
-// 店舗名の推定: 先頭付近で「…店」で終わる行を優先、無ければ最初の文字らしい行
+// 店舗名の推定: 電話番号を除き、住所・営業時間・キャンペーン文言の行は避け、「…店」を優先
 function guessStore(rawLines){
-  const cands = rawLines.slice(0, 10).map(cleanLine)
-    .map(l=> l.replace(/^[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]+|[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff)]+$/g, '').trim())
-    .filter(l=> /[A-Za-z\u3040-\u30ff\u4e00-\u9fff]{3,}/.test(l) && !/領収|レシート|ご利用|ありがとう|\d{4,}/.test(l));
-  return cands.find(l=> /店$/.test(l)) || cands[0] || null;
+  const strip = l => l.replace(/^[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]+|[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff)]+$/g, '').trim();
+  const cands = rawLines.slice(0, 12).map(cleanLine)
+    .map(l=> l.replace(/(TEL|Tel|電話|ＴＥＬ)\s*[\d\-]*|\d{2,4}-\d{2,4}-\d{3,4}/g, ' ').trim())
+    .map(strip)
+    .filter(l=> /[A-Za-z\u3040-\u30ff\u4e00-\u9fff]{3,}/.test(l))
+    .filter(l=> !/領収|レシート|ご利用|ありがとう|営業|開催|セール|ポイント|支払|クレジット|\d{4,}/.test(l))
+    .filter(l=> !/[都道府県].*[市区町村郡]|[市区町村郡].*\d+-\d+/.test(l));      // 住所らしい行は除外
+  for(const l of cands){
+    const tok = l.split(/\s+/).find(t=> /\S{2,}店$/.test(t));                  // 「みなとみらい店」のような語を優先
+    if(tok) return tok;
+  }
+  return cands[0] || null;
 }
 
 // 「全行表示」用: 金額・日付に関係しそうな行だけに絞る（住所・電話・領収証・軽減税率などは除外）
@@ -253,7 +483,8 @@ function extractDateFromLine(line){
   const d = findDates(line).sort((a,b)=> b.score - a.score)[0];
   return d ? d.value : null;
 }
-function analyzeLines(lines){
+function analyzeLines(lines, ctx){
+  OCR_CTX = ctx || OCR_CTX;
   return {
     amounts: extractAmountCandidates(lines),
     dates: extractDateCandidates(lines),
@@ -295,7 +526,7 @@ async function preprocessImage(file, maxSide){
 
 // 変更: 1回目（長辺3000px）で金額・日付が十分に確からしければそのまま採用。
 // 日付が無い／金額の確からしさが低い場合だけ、解像度を変えて2回目を読み取って結果を統合する。
-async function runReceiptOcrOffline(file, onStatus){
+async function runReceiptOcrOffline(file, onStatus, ctx){
   let label = '読み取っています…';
   const worker = await Tesseract.createWorker('jpn+eng', 1, {
     logger: (m)=>{
@@ -309,12 +540,12 @@ async function runReceiptOcrOffline(file, onStatus){
       return (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
     };
     let lines = await pass(3000);
-    let result = analyzeLines(lines);
+    let result = analyzeLines(lines, ctx);
     const weak = !result.dates.length || !result.amounts.length || result.amounts[0].score < 12;
     if(weak){
       label = '精度を上げるため再読み取りしています…';
       lines = lines.concat(await pass(4000));
-      result = analyzeLines(lines);
+      result = analyzeLines(lines, ctx);
     }
     return result;
   } finally {
@@ -329,13 +560,19 @@ function setSelected(container, kind, chip){
 }
 function renderOcrCandidates(result){
   const box = document.getElementById('ocr-lines');
-  const amountChips = result.amounts.map((c,i)=>`
-    <button type="button" class="cand-chip ${i===0?'selected':''}" data-kind="amount" data-value="${c.value}">
+  const curAmount = getNumberValue('ex-amount');
+  const curDate = document.getElementById('ex-date').value;
+  const today = todayStr();
+  const amountChips = result.amounts.map(c=>`
+    <button type="button" class="cand-chip ${c.value === curAmount ? 'selected' : ''}" data-kind="amount" data-value="${c.value}">
       ${yen(c.value)}${c.label ? `<span class="src">${escapeHtml(c.label)}</span>` : ''}
     </button>`).join('');
-  const dateChips = result.dates.map((c,i)=>`
-    <button type="button" class="cand-chip ${i===0?'selected':''}" data-kind="date" data-value="${c.value}">
-      ${c.value.replace(/-/g,'/')}
+  // 日付: 「読み込んだ日（今日）」を先頭に常に出し、その後ろにレシートから読み取った候補を並べる
+  const dateItems = [{ value: today, label: '読み込んだ日' }]
+    .concat(result.dates.filter(c=> c.value !== today).map(c=> ({ value: c.value, label: c.inferred ? '年は推定' : 'レシートの日付' })));
+  const dateChips = dateItems.map(c=>`
+    <button type="button" class="cand-chip ${c.value === curDate ? 'selected' : ''}" data-kind="date" data-value="${c.value}">
+      ${c.value.replace(/-/g,'/')}<span class="src">${c.label}</span>
     </button>`).join('');
 
   box.innerHTML = `
@@ -344,8 +581,9 @@ function renderOcrCandidates(result){
       <div class="cand-list">${amountChips || '<span class="muted">金額らしい数字が見つかりませんでした。手入力してください。</span>'}</div>
     </div>
     <div class="cand-group">
-      <div class="cand-title">日付の候補（正しいものをクリック）</div>
-      <div class="cand-list">${dateChips || '<span class="muted">日付らしい文字列が見つかりませんでした。手入力してください。</span>'}</div>
+      <div class="cand-title">支払日の候補（正しいものをクリック）</div>
+      <div class="cand-list">${dateChips}</div>
+      ${result.dates.length ? '' : '<div class="muted" style="margin-top:6px;">レシートから日付は読み取れませんでした。</div>'}
     </div>
     <details class="ocr-all">
       <summary>候補に無い場合：金額・日付に関係しそうな行を表示</summary>
@@ -396,40 +634,94 @@ function renderAllLines(lines){
   });
 }
 
+/* ▲▲▲ 変更: 保存済みの実費の編集（renderExpenseTab 内と bindExpenseTab 内に分かれています） ▲▲▲ */
 function bindExpenseTab(trip){
-  const cameraInput = document.getElementById('ocr-camera');
-  const fileInput = document.getElementById('ocr-file');
-  document.getElementById('btn-open-camera').onclick = ()=> cameraInput.click();
-  document.getElementById('btn-select-image').onclick = ()=> fileInput.click();
+  revokeObjectUrls();
+  pendingReceipt = null;          // 再描画のたびに、保存していない撮影画像は破棄する（一時データのため）
+  gcReceipts();
 
-  const handleReceiptImage = async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const statusEl = document.getElementById('ocr-status');
+  // ---- 撮影／選択した画像を読み取る（画像は保存を選ばない限り、読み取り後に捨てる） ----
+  const statusEl = document.getElementById('ocr-status');
+  const previewEl = document.getElementById('receipt-preview');
+  const editingNow = editingId ? trip.expenses.find(x=>x.id===editingId) : null;
+
+  function renderReceiptPreview(){
+    if(!pendingReceipt){ previewEl.innerHTML = ''; return; }
+    const replacing = editingNow && editingNow.receiptId;
+    previewEl.innerHTML = `
+      <div class="receipt-preview">
+        <img class="receipt-thumb-img" src="${makeUrl(pendingReceipt)}" alt="撮影した画像">
+        <label><input type="checkbox" id="receipt-keep">
+          このレシート画像も保存する（チェックしたときだけ保存します。この端末のブラウザ内に保存され、外部には送信されません）${replacing ? '<br>※ チェックして保存すると、保存済みの画像はこの画像に置き換わります' : ''}
+        </label>
+      </div>`;
+  }
+
+  async function processReceipt(file){
     document.getElementById('ocr-lines').innerHTML = '';
+    previewEl.innerHTML = '';
+    pendingReceipt = null;
+    const storePromise = compressForStorage(file).catch(()=> null);      // 保存用の縮小画像を並行して作る
     try{
       statusEl.textContent = '読み取っています…（初回はライブラリのダウンロードに少し時間がかかります）';
-      const result = await runReceiptOcrOffline(file, (msg)=>{ statusEl.textContent = msg; });
-      // 一番有力な候補を自動で入力欄に反映
+      const result = await runReceiptOcrOffline(file, (msg)=>{ statusEl.textContent = msg; },
+        { tripStart: trip.startDate, tripEnd: trip.endDate });
       if(result.amounts.length) document.getElementById('ex-amount').value = result.amounts[0].value.toLocaleString('ja-JP');
-      if(result.dates.length) document.getElementById('ex-date').value = result.dates[0].value;
+      // 変更: レシートに年つきの日付があればそれを使い、無ければ「読み込んだ日（今日）」を既定にする
+      const explicitDate = result.dates.find(c=> !c.inferred);
+      if(explicitDate) document.getElementById('ex-date').value = explicitDate.value;
+      else if(!editingNow) document.getElementById('ex-date').value = todayStr();
       document.getElementById('ex-memo').value = result.store || 'OCRで読み取り（要確認）';
       renderOcrCandidates(result);
-      statusEl.textContent = '読み取り完了。一番有力な候補を入力しました。違う場合は下の候補から選んでください。';
+      statusEl.textContent = explicitDate
+        ? '読み取り完了。一番有力な候補を入力しました。違う場合は下の候補から選んでください。'
+        : '読み取り完了。レシートから年つきの日付が見つからなかったため、支払日は読み込んだ日（今日）にしました。別の日付にする場合は下の候補から選んでください。';
       showToast('レシートを読み取りました');
     }catch(err){
       console.error(err);
       statusEl.textContent = '読み取りに失敗しました（' + (err.message||'エラー') + '）。手入力してください。';
       showToast('OCRに失敗しました。手入力してください。');
-    } finally {
-      // 同じ画像を続けて選んでも change イベントが発火するようにする
-      e.target.value = '';
+    }
+    pendingReceipt = await storePromise;      // 読み取りに失敗しても、画像の保存は選べる
+    renderReceiptPreview();
+  }
+
+  // スマホ: 標準のカメラアプリを起動（高解像度）。PC: ブラウザのカメラ画面。どちらも使えなければファイル選択
+  document.getElementById('btn-camera').onclick = ()=>{
+    if(IS_MOBILE || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
+      document.getElementById('ocr-camera').click();
+    } else {
+      openCameraModal(processReceipt);
     }
   };
-  cameraInput.onchange = handleReceiptImage;
-  fileInput.onchange = handleReceiptImage;
+  document.getElementById('btn-pick-file').onclick = ()=> document.getElementById('ocr-file').click();
+  ['ocr-file', 'ocr-camera'].forEach(id=>{
+    document.getElementById(id).onchange = (e)=>{
+      const f = e.target.files[0];
+      e.target.value = '';                    // 同じファイルをもう一度選んでも反応するようにする
+      if(f) processReceipt(f);
+    };
+  });
 
-  document.getElementById('btn-add-expense').onclick = ()=>{
+  // ---- 保存済みレシート画像（編集中の記録） ----
+  const savedImg = document.getElementById('saved-receipt-img');
+  if(savedImg && editingNow){
+    idbGet(editingNow.receiptId).then(blob=>{
+      if(blob) savedImg.src = makeUrl(blob);
+      else savedImg.alt = '画像が見つかりません';
+    }).catch(()=>{});
+    // 画像を削除したら、保存データに反映したうえで画像欄だけ取り除く（入力途中のフォームは消さない）
+    const afterDelete = ()=>{
+      saveState();
+      const field = savedImg.closest('.field');
+      if(field) field.remove();
+    };
+    savedImg.onclick = ()=> openReceiptViewer(editingNow, afterDelete);
+    document.getElementById('btn-del-receipt').onclick = ()=> confirmDeleteReceipt(editingNow, afterDelete);
+  }
+
+  // ---- 追加／変更の保存 ----
+  document.getElementById('btn-add-expense').onclick = async ()=>{
     const category = document.getElementById('ex-category').value;
     const actual = getNumberValue('ex-amount');
     const payer = document.getElementById('ex-payer').value;
@@ -437,11 +729,55 @@ function bindExpenseTab(trip){
     const memo = document.getElementById('ex-memo').value.trim();
     if(!actual){ showToast('金額を入力してください'); return; }
     if(!date){ showToast('支払日を入力してください'); return; }
-    trip.expenses.push({ id: uid('exp'), category, estimate:0, actual, payer, date, memo });
-    rerenderPage(); showToast('実費を記録しました');
+
+    // 「保存する」にチェックが入っているときだけ、画像をこの端末のブラウザ内に保存する
+    let newReceiptId = null, imageFailed = false;
+    const keep = document.getElementById('receipt-keep');
+    if(pendingReceipt && keep && keep.checked){
+      try{ newReceiptId = uid('rcp'); await idbPut(newReceiptId, pendingReceipt); }
+      catch(e){ console.error(e); newReceiptId = null; imageFailed = true; }
+    }
+    const imageNote = imageFailed ? '（レシート画像は保存できませんでした）' : '';
+
+    if(editingId){
+      const target = trip.expenses.find(x=>x.id===editingId);
+      if(target){
+        Object.assign(target, { category, actual, payer, date, memo });
+        if(newReceiptId){
+          if(target.receiptId) { try{ await idbDelete(target.receiptId); }catch(e){} }   // 置き換え前の画像を消す
+          target.receiptId = newReceiptId;
+        }
+      }
+      editingId = null;
+      rerenderPage();
+      showToast((trip.settlements && trip.settlements.length
+        ? '変更を保存しました。「精算」タブで精算を計算し直してください'
+        : '変更を保存しました') + imageNote);
+      return;
+    }
+    const rec = { id: uid('exp'), category, estimate:0, actual, payer, date, memo };
+    if(newReceiptId) rec.receiptId = newReceiptId;
+    trip.expenses.push(rec);
+    rerenderPage(); showToast('実費を記録しました' + imageNote);
   };
+
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+  if(cancelBtn) cancelBtn.onclick = ()=>{ editingId = null; renderTripPage(); };
+  document.querySelectorAll('.btn-edit-expense').forEach(el=>{
+    el.onclick = ()=>{
+      editingId = el.dataset.id;
+      renderTripPage();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+  });
+  document.querySelectorAll('.btn-view-receipt').forEach(el=>{
+    el.onclick = ()=> openReceiptViewer(trip.expenses.find(x=>x.id===el.dataset.id), rerenderPage);
+  });
   document.querySelectorAll('.btn-del-expense').forEach(el=>{
     el.onclick = ()=>{
+      const target = trip.expenses.find(x=>x.id===el.dataset.id);
+      if(target && target.receiptId) idbDelete(target.receiptId).catch(()=>{});     // 記録と一緒に画像も削除
+      if(editingId === el.dataset.id) editingId = null;
       trip.expenses = trip.expenses.filter(x=>x.id!==el.dataset.id);
       rerenderPage();
     };
