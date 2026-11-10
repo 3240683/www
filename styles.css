@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Zen+Kurenaido&display=swap');
-
   :root{
     --ink:#1E3A34;
     --ink-soft:#3E5A53;
@@ -531,16 +529,5 @@ body {
   margin-bottom: 18px;
 }
 
-/* ===== Zen Kurenaido 全体適用 ===== */
-
-*,
-*::before,
-*::after {
-  font-family: 'Zen Kurenaido', sans-serif !important;
-}
-
-html,
-body,
-#app {
-  font-family: 'Zen Kurenaido', sans-serif !important;
+enaido', sans-serif !important;
 }
