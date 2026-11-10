@@ -492,3 +492,39 @@ body {
   background: #FAF8F1;
 }
 
+/* ===== 旅行詳細画面の上部を見やすくする ===== */
+
+.trip-header,
+.back-link,
+.tabs {
+  position: relative;
+  z-index: 1;
+}
+
+/* 上部情報エリアの背景 */
+.trip-header {
+  background: rgba(255, 254, 250, 0.94);
+  padding: 18px 20px 12px;
+  border: 1px solid #DED7C6;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: 0;
+}
+
+/* 戻るリンク */
+.back-link {
+  display: inline-block;
+  background: rgba(255, 254, 250, 0.94);
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+/* タブ部分 */
+.tabs {
+  background: rgba(255, 254, 250, 0.94);
+  padding: 5px 10px 0;
+  border: 1px solid #DED7C6;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  margin-bottom: 18px;
+}
