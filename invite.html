@@ -1,266 +1,409 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>招待・データ共有｜旅費メモ</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>招待｜旅費メモ</title>
+
+  <link rel="stylesheet" href="styles.css">
+
+  <style>
+    .invite-section {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 18px 0;
+      border: 1px solid #e5e5e5;
+    }
+
+    .invite-section h3 {
+      margin-top: 0;
+    }
+
+    .invite-field {
+      margin: 15px 0;
+    }
+
+    .invite-field label {
+      display: block;
+      margin-bottom: 7px;
+      font-weight: bold;
+    }
+
+    .invite-field input,
+    .invite-field select {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #ccc;
+      border-radius: 7px;
+      box-sizing: border-box;
+    }
+
+    .invite-url {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .invite-url input {
+      flex: 1;
+      min-width: 0;
+      padding: 10px;
+    }
+
+    .invite-url button {
+      white-space: nowrap;
+    }
+
+    .invite-note {
+      color: #777;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .invite-result {
+      background: #f5f8f5;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+    }
+
+    .invite-error {
+      color: #c0392b;
+      margin-top: 10px;
+    }
+
+    .join-box {
+      max-width: 480px;
+      margin: 35px auto;
+      padding: 22px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+    }
+
+    .join-box input {
+      width: 100%;
+      padding: 12px;
+      margin: 12px 0;
+      box-sizing: border-box;
+    }
+  </style>
 </head>
+
 <body>
+
 <div id="app"></div>
 <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase.js"></script>
 <script src="common.js"></script>
+
 <script>
 /*
-  invite.html
-  サーバーを使わないJSONファイル共有方式。
-  招待URLだけで別端末にデータを同期することはできません。
+=================================================
+招待画面
+=================================================
 */
 
-function ensureInviteData(trip){
-  if(!Array.isArray(trip.members)) trip.members = [];
-  if(!Array.isArray(trip.expenses)) trip.expenses = [];
-  if(!Array.isArray(trip.settlements)) trip.settlements = [];
-}
+// 招待URL参加処理
+async function handleInviteJoin() {
 
-function renderInviteMembers(trip){
-  if(!trip.members.length) return '<p class="muted">参加者はいません。</p>';
-  return trip.members.map(m => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #eee;">
-      <span>${escapeHtml(m.name)} ${m.owner ? '<span class="badge-owner">オーナー</span>' : ''}</span>
-      <span class="muted">${m.owner ? '管理者' : '参加者'}</span>
-    </div>
-  `).join('');
-}
+  const params = new URLSearchParams(location.search);
+  const token = params.get('join');
 
-function renderInviteTab(trip){
-  ensureInviteData(trip);
-  const owner = isOwner(trip, state.currentUserId);
-  return `
-    <div class="card">
-      <div class="section-title"><h2>旅行データの共有</h2></div>
-      <p class="muted">
-        このアプリはサーバーを使わず、旅行データをJSONファイルで受け渡します。
-        オーナーがファイルを書き出してLINEなどで共有し、受け取った人がこの画面から読み込みます。
-      </p>
-      <div class="btn-row">
-        <button class="btn accent" id="btn-export-trip" type="button">旅行データを書き出す</button>
-      </div>
-      <hr>
-      <h3>旅行データを読み込む</h3>
-      <p class="muted">
-        共有された「旅費メモ_旅行名.json」を選択してください。
-        読み込み後、この端末に旅行データが保存されます。
-      </p>
-      <div class="field">
-        <label for="trip-json-file">JSONファイル</label>
-        <input id="trip-json-file" type="file" accept=".json,application/json">
-      </div>
-      <div class="field" id="member-select-wrap" style="display:none;">
-        <label for="import-member">この端末で使う参加者名</label>
-        <select id="import-member"></select>
-        <p class="muted">自分の名前を選んでください。選択した参加者としてこの旅行を開きます。</p>
-      </div>
-      <div class="btn-row">
-        <button class="btn secondary" id="btn-import-trip" type="button">選択したJSONを読み込む</button>
-      </div>
-      <p class="muted" style="margin-top:12px;">
-        注意：JSONファイルは読み込んだ時点のデータです。誰かが更新しても自動反映されません。
-        更新内容を共有するには、更新した人がもう一度書き出して送り直してください。
-      </p>
-    </div>
-    <div class="card">
-      <div class="section-title"><h2>参加者一覧</h2></div>
-      <p class="muted">現在の参加者：${trip.members.length}人</p>
-      ${renderInviteMembers(trip)}
-    </div>
+  if (!token) return false;
+
+  const app = document.getElementById('app');
+
+  app.innerHTML = `
+    <main class="join-box">
+      <h2>旅行への参加</h2>
+      <p>参加する名前を入力してください。</p>
+
+      <form id="join-form">
+        <input
+          type="text"
+          id="join-name"
+          maxlength="30"
+          placeholder="名前を入力"
+          required
+        >
+
+        <button class="btn accent" type="submit">
+          旅行に参加する
+        </button>
+
+        <p id="join-error" class="invite-error"></p>
+      </form>
+    </main>
   `;
-}
 
-function bindInviteTab(trip){
-  ensureInviteData(trip);
+  document.getElementById('join-form').addEventListener(
+    'submit',
+    async (event) => {
 
-  const exportButton = document.getElementById('btn-export-trip');
-  if(exportButton){
-    exportButton.onclick = async () => {
-      try{
-        await saveState();
-        exportTripJson(trip);
-        showToast('旅行データを書き出しました');
-      }catch(e){
-        console.error(e);
-        showToast(e.message || '書き出しに失敗しました');
-      }
-    };
-  }
+      event.preventDefault();
 
-  const fileInput = document.getElementById('trip-json-file');
-  const memberWrap = document.getElementById('member-select-wrap');
-  const memberSelect = document.getElementById('import-member');
-  const importButton = document.getElementById('btn-import-trip');
-  let parsedTrip = null;
+      const name =
+        document.getElementById('join-name').value.trim();
 
-  fileInput.onchange = async () => {
-    parsedTrip = null;
-    memberWrap.style.display = 'none';
-    memberSelect.innerHTML = '';
-    const file = fileInput.files && fileInput.files[0];
-    if(!file) return;
-    try{
-      parsedTrip = await readTripJsonFile(file);
-      memberSelect.innerHTML = parsedTrip.members.map(m =>
-        `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}${m.owner ? '（オーナー）' : ''}</option>`
-      ).join('');
-      memberWrap.style.display = 'block';
-      showToast('ファイルを確認しました。自分の名前を選んで読み込んでください');
-    }catch(e){
-      showToast(e.message || 'ファイルを読み込めません');
-    }
-  };
+      const errorArea =
+        document.getElementById('join-error');
 
-  importButton.onclick = async () => {
-    const file = fileInput.files && fileInput.files[0];
-    if(!file){
-      showToast('先にJSONファイルを選択してください');
-      return;
-    }
-    try{
-      if(!parsedTrip) parsedTrip = await readTripJsonFile(file);
-      const selectedMemberId = memberSelect.value;
-      const selectedMember = parsedTrip.members.find(m => m.id === selectedMemberId);
-      if(!selectedMember){
-        showToast('参加者を選択してください');
+      if (!name) {
+        errorArea.textContent = '名前を入力してください。';
         return;
       }
 
-      const copy = JSON.parse(JSON.stringify(parsedTrip));
-      const existingIndex = state.trips.findIndex(t => t.id === copy.id);
-      if(existingIndex >= 0){
-        if(!confirm('同じ旅行データがこの端末にあります。読み込んだ内容で置き換えますか？')) return;
-        state.trips[existingIndex] = copy;
-      }else{
-        state.trips.push(copy);
+      try {
+
+        const user = await ensureSupabaseUser();
+
+        const { data, error } =
+          await supabaseClient.rpc(
+            'join_trip_by_invite',
+            {
+              p_token: token,
+              p_name: name
+            }
+          );
+
+        if (error) throw error;
+
+        // 参加完了後に旅行画面へ移動
+        location.href =
+          'members.html?trip=' + encodeURIComponent(data);
+
+      } catch (error) {
+
+        console.error(error);
+
+        errorArea.textContent =
+          error.message || '参加できませんでした。';
+
       }
 
-      state.currentTripId = copy.id;
-      state.currentUserId = selectedMemberId;
-      await saveState();
-
-      showToast('旅行データを読み込みました');
-      setTimeout(() => {
-        location.href = 'members.html?trip=' + encodeURIComponent(copy.id);
-      }, 500);
-    }catch(e){
-      console.error(e);
-      showToast(e.message || '読み込みに失敗しました');
     }
-  };
+  );
+
+  return true;
 }
 
 
-// 旅行データがまだない端末でも、JSONを読み込めるようにする
-function renderImportOnlyPage(){
+// 招待URL発行画面
+function renderInviteTab(trip) {
+
+  const isCurrentOwner =
+    trip.members.some(m =>
+      m.id === state.currentUserId && m.owner
+    );
+
+  if (!isCurrentOwner) {
+    return `
+      <section class="invite-section">
+        <h3>招待</h3>
+        <p>招待URLの発行は旅行の管理者のみ行えます。</p>
+      </section>
+    `;
+  }
+
   return `
-    <main>
-      <a class="back-link" href="index.html">← 旅行一覧に戻る</a>
-      <div class="card">
-        <div class="section-title"><h2>旅行データを読み込む</h2></div>
-        <p class="muted">共有された旅費メモのJSONファイルを選択してください。</p>
-        <div class="field">
-          <label for="trip-json-file">JSONファイル</label>
-          <input id="trip-json-file" type="file" accept=".json,application/json">
-        </div>
-        <div class="field" id="member-select-wrap" style="display:none;">
-          <label for="import-member">この端末で使う参加者名</label>
-          <select id="import-member"></select>
-        </div>
-        <div class="btn-row">
-          <button class="btn accent" id="btn-import-trip" type="button">旅行データを読み込む</button>
-        </div>
-        <p class="muted">読み込み後、この端末に旅行データが保存されます。自動同期ではないため、更新後はJSONを再共有してください。</p>
+    <section class="invite-section">
+
+      <h3>招待URLの発行</h3>
+
+      <p>
+        URLを友達に共有すると、
+        スマートフォンやパソコンから参加できます。
+      </p>
+
+      <div class="invite-field">
+        <label for="invite-expire">有効期限</label>
+
+        <select id="invite-expire">
+          <option value="1">1日</option>
+          <option value="3" selected>3日</option>
+          <option value="7">7日</option>
+          <option value="30">30日</option>
+        </select>
       </div>
-    </main>
-    ${modalHost()}
+
+      <div class="invite-field">
+        <label for="invite-count">招待可能人数</label>
+
+        <select id="invite-count">
+          <option value="1">1人</option>
+          <option value="3">3人</option>
+          <option value="5" selected>5人</option>
+          <option value="10">10人</option>
+          <option value="20">20人</option>
+        </select>
+      </div>
+
+      <button class="btn accent" id="create-invite">
+        招待URLを発行する
+      </button>
+
+      <div id="invite-result"></div>
+
+      <p class="invite-note">
+        ※招待URLを知っている人は参加できるため、
+        信頼できる相手にのみ共有してください。
+      </p>
+
+    </section>
   `;
 }
 
-function bindImportOnlyPage(){
-  const fileInput = document.getElementById('trip-json-file');
-  const memberWrap = document.getElementById('member-select-wrap');
-  const memberSelect = document.getElementById('import-member');
-  const importButton = document.getElementById('btn-import-trip');
-  let parsedTrip = null;
 
-  fileInput.onchange = async () => {
-    parsedTrip = null;
-    memberWrap.style.display = 'none';
-    memberSelect.innerHTML = '';
-    const file = fileInput.files && fileInput.files[0];
-    if(!file) return;
-    try{
-      parsedTrip = await readTripJsonFile(file);
-      memberSelect.innerHTML = parsedTrip.members.map(m =>
-        `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}${m.owner ? '（オーナー）' : ''}</option>`
-      ).join('');
-      memberWrap.style.display = 'block';
-      showToast('自分の名前を選んでください');
-    }catch(e){
-      showToast(e.message || 'ファイルを読み込めません');
-    }
-  };
+// 招待URLを発行
+async function createInviteUrl(trip) {
 
-  importButton.onclick = async () => {
-    const file = fileInput.files && fileInput.files[0];
-    if(!file){ showToast('先にJSONファイルを選択してください'); return; }
-    try{
-      if(!parsedTrip) parsedTrip = await readTripJsonFile(file);
-      const selectedMemberId = memberSelect.value;
-      if(!parsedTrip.members.some(m => m.id === selectedMemberId)){
-        showToast('参加者を選択してください'); return;
-      }
-      const copy = JSON.parse(JSON.stringify(parsedTrip));
-      const existingIndex = state.trips.findIndex(t => t.id === copy.id);
-      if(existingIndex >= 0){
-        if(!confirm('同じ旅行データがあります。読み込んだ内容で置き換えますか？')) return;
-        state.trips[existingIndex] = copy;
-      }else{
-        state.trips.push(copy);
-      }
-      state.currentTripId = copy.id;
-      state.currentUserId = selectedMemberId;
-      await saveState();
-      showToast('旅行データを読み込みました');
-      setTimeout(() => location.href = 'members.html?trip=' + encodeURIComponent(copy.id), 500);
-    }catch(e){
-      console.error(e);
-      showToast(e.message || '読み込みに失敗しました');
-    }
-  };
+  const resultArea =
+    document.getElementById('invite-result');
+
+  const expireDays =
+    Number(document.getElementById('invite-expire').value);
+
+  const count =
+    Number(document.getElementById('invite-count').value);
+
+  resultArea.textContent = '発行しています...';
+
+  try {
+
+    const user = await ensureSupabaseUser();
+
+    // 暗号学的に安全なランダムトークン
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+
+    const token = Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // SHA-256でハッシュ化して保存する
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(token)
+    );
+
+    const tokenHash = Array.from(
+      new Uint8Array(digest)
+    )
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const expiresAt = new Date(
+      Date.now() + expireDays * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const { error } = await supabaseClient
+      .from('trip_invites')
+      .insert({
+        trip_id: trip.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        remaining: count,
+        created_by: user.id
+      });
+
+    if (error) throw error;
+
+    const url = new URL(
+      'invite.html',
+      location.href
+    );
+
+    url.searchParams.set('trip', trip.id);
+    url.searchParams.set('join', token);
+
+    resultArea.innerHTML = `
+      <div class="invite-result">
+
+        <strong>招待URLを発行しました。</strong>
+
+        <div class="invite-url">
+          <input
+            type="text"
+            id="generated-url"
+            readonly
+            value="${escapeHtml(url.href)}"
+          >
+
+          <button
+            class="btn secondary"
+            id="copy-invite"
+            type="button"
+          >
+            コピー
+          </button>
+        </div>
+
+        <p class="invite-note">
+          有効期限：${expireDays}日<br>
+          招待可能人数：${count}人
+        </p>
+
+      </div>
+    `;
+
+    document.getElementById('copy-invite')
+      .addEventListener('click', async () => {
+
+        await navigator.clipboard.writeText(url.href);
+
+        showToast('招待URLをコピーしました');
+
+      });
+
+  } catch (error) {
+
+    console.error(error);
+
+    resultArea.innerHTML = `
+      <p class="invite-error">
+        招待URLを発行できませんでした。
+        ${escapeHtml(error.message)}
+      </p>
+    `;
+
+  }
 }
 
-async function initInvitePage(){
-  await loadState();
-  if(!state.profile){
-    location.href = 'index.html';
-    return;
-  }
-  const params = new URLSearchParams(location.search);
-  const tripId = params.get('trip') || state.currentTripId;
-  const trip = findTrip(tripId);
-  if(!trip){
-    document.getElementById('app').innerHTML = topbar(true) + renderImportOnlyPage();
-    bindImportOnlyPage();
-    return;
-  }
-  state.currentTripId = trip.id;
-  __page = {key:'invite.html', render:renderInviteTab, bind:bindInviteTab};
-  renderTripPage();
+
+// ボタン設定
+function bindInviteTab(trip) {
+
+  const button =
+    document.getElementById('create-invite');
+
+  if (!button) return;
+
+  button.addEventListener('click', () => {
+    createInviteUrl(trip);
+  });
 }
 
-initInvitePage();
 
+// ページ初期化
+(async function() {
+
+  // 招待URLからの参加なら、通常ページ初期化より先に処理する
+  const isJoining = await handleInviteJoin();
+
+  if (isJoining) return;
+
+  await initTripPage(
+    'invite.html',
+    renderInviteTab,
+    bindInviteTab
+  );
+
+})();
 </script>
+
 </body>
 </html>
