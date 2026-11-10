@@ -528,3 +528,19 @@ body {
   border-radius: 0 0 6px 6px;
   margin-bottom: 18px;
 }
+
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kurenaido&display=swap');
+
+/* ===== 全体のフォントをZen Kurenaidoに変更 ===== */
+
+html,
+body,
+#app,
+h1, h2, h3, h4,
+button,
+input,
+select,
+textarea {
+  font-family: 'Zen Kurenaido', sans-serif !important;
+}
