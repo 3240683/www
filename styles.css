@@ -546,58 +546,77 @@ body,
 }
 
 
-/* ===== 旅行スタンプ風デザイン ===== */
 
-/* 旅行カードにスタンプ風アクセント */
+/* ===== 旅行スタンプ風デザイン・完成版 ===== */
+
+/* 旅行カード */
 .trip-card {
   position: relative;
   overflow: hidden;
+  padding-bottom: 42px;
 }
 
-/* カード右上の丸いスタンプ */
+/* 左下に切符風スタンプ */
 .trip-card::after {
   content: "旅の記録";
+
   position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%) rotate(10deg);
+  left: 18px;
+  bottom: 9px;
 
   display: flex;
   align-items: center;
   justify-content: center;
 
-  width: 55px;
-  height: 55px;
+  width: 52px;
+  height: 25px;
 
-  border: 2px solid var(--accent);
-  border-radius: 50%;
+  border: 1.5px dashed var(--accent);
+  border-radius: 3px;
 
   color: var(--accent);
+  font-family: 'Zen Kurenaido', sans-serif;
   font-size: 11px;
   font-weight: bold;
   letter-spacing: 1px;
 
-  opacity: 0.65;
+  transform: rotate(-7deg);
+  opacity: 0.75;
+
   pointer-events: none;
+  transition: transform .25s ease, opacity .25s ease;
 }
 
-/* セクション見出しに小さな飾り */
-.section-title {
-  position: relative;
-}
-
-/* 旅行詳細の見出し装飾 */
-.trip-header h2::after {
-  content: " ✳";
-  color: var(--gold);
-  font-size: 14px;
+/* ホバー時のスタンプ */
+.trip-card:hover::after {
+  transform: rotate(-3deg) scale(1.08);
+  opacity: 1;
 }
 
 /* ブランドロゴを印鑑風に */
 .brand .stamp {
   border: 2px double var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
   transform: rotate(-10deg);
   box-shadow: 0 0 0 2px rgba(181,80,47,.08);
+}
+
+/* セクション見出し */
+.section-title {
+  position: relative;
+}
+
+.section-title h2 {
+  border-left: 4px solid var(--accent);
+  padding-left: 10px;
+}
+
+/* 旅行詳細の見出し */
+.trip-header h2::after {
+  content: " ✳";
+  color: var(--gold);
+  font-size: 14px;
 }
 
 /* ステータスを切符風に */
@@ -605,24 +624,22 @@ body,
   border: 1px dashed rgba(181,80,47,.35);
 }
 
-/* テーブル見出しに朱色のアクセント */
+/* テーブル見出し */
 table.data-table th {
   border-bottom: 2px solid var(--accent);
 }
 
-/* スタンプのホバー演出 */
-.trip-card:hover::after {
-  transform: translateY(-50%) rotate(-8deg) scale(1.08);
-  opacity: 0.9;
-  transition: .25s ease;
-}
-
-/* スマホではスタンプを小さく */
+/* スマホ表示 */
 @media(max-width:600px) {
+  .trip-card {
+    padding-bottom: 40px;
+  }
+
   .trip-card::after {
-    width: 43px;
-    height: 43px;
-    font-size: 9px;
-    right: 10px;
+    left: 12px;
+    bottom: 8px;
+    width: 46px;
+    height: 23px;
+    font-size: 10px;
   }
 }
