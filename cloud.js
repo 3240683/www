@@ -16,6 +16,7 @@ const Cloud = (function(){
 
   let fb = null, remote = null, user = null;
   let ready = false, busy = false, inSync = false, message = '', timer = null, started = false;
+  let pendingLink = false;        // ログイン用リンクで開いたが、メールアドレスの確認がまだ済んでいない状態（別の端末・アプリ内ブラウザで開いた場合）
   const listeners = [];
 
   const config = ()=> (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && !/^YOUR/i.test(window.FIREBASE_CONFIG.apiKey)) ? window.FIREBASE_CONFIG : null;
@@ -138,19 +139,63 @@ const Cloud = (function(){
   }
   const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
 
+  // Firebase のエラーを、原因と対処が分かる日本語にする（コードも末尾に表示して、原因を特定しやすくする）
+  function explainError(e){
+    const code = (e && e.code) || '';
+    const tail = code ? `（${code}）` : '';
+    const map = {
+      'auth/invalid-action-code': 'このログインリンクは、期限切れか、すでに使われています。もう一度「ログインリンクを送る」を押して、届いた新しいメールのリンクを開いてください。メールを開いたときにセキュリティ機能がリンクを先に開いてしまう場合は、リンクを長押し（右クリック）してコピーし、ブラウザのアドレス欄に貼り付けて開いてください。',
+      'auth/expired-action-code': 'このログインリンクは期限切れです。もう一度「ログインリンクを送る」を押してください。',
+      'auth/invalid-email': 'メールアドレスが、リンクを送ったアドレスと一致しません。リンクを送ったときと同じアドレスを入力してください。',
+      'auth/network-request-failed': '通信に失敗しました。ネットワークを確認して、もう一度お試しください。',
+      'auth/unauthorized-continue-uri': 'このサイトのドメインが Firebase の「承認済みドメイン」に登録されていません（Authentication → 設定 → 承認済みドメイン）。',
+      'auth/unauthorized-domain': 'このサイトのドメインが Firebase の「承認済みドメイン」に登録されていません（Authentication → 設定 → 承認済みドメイン）。',
+      'auth/operation-not-allowed': 'Firebase 側で「メールリンク」のログイン方法が有効になっていません（Authentication → Sign-in method）。',
+      'auth/quota-exceeded': 'メールの送信回数の上限に達しました。しばらく待つか、明日もう一度お試しください。',
+      'auth/too-many-requests': '短時間に試行しすぎました。しばらく待ってから、もう一度お試しください。',
+      'auth/user-disabled': 'このアカウントは無効になっています。',
+      'permission-denied': 'データの保存が許可されていません。Firestore のルールの設定（CLOUD_SETUP.md の手順3）を確認してください。'
+    };
+    return (map[code] || ('ログインできませんでした：' + (e && e.message ? e.message : e))) + (map[code] ? tail : '');
+  }
+
   async function sendLoginLink(email){
     email = (email || '').trim();
     if(!validEmail(email)) throw new Error('メールアドレスの形式が正しくありません');
-    await init();
-    const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'index.html';
-    await fb.authM.sendSignInLinkToEmail(fb.auth, email, { url, handleCodeInApp: true });
+    try{
+      await init();
+      const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'index.html';
+      await fb.authM.sendSignInLinkToEmail(fb.auth, email, { url, handleCodeInApp: true });
+    }catch(e){ console.error(e); throw new Error(explainError(e)); }
     localStorage.setItem(EMAIL_KEY, email);
-    setMessage(`${email} にログイン用のリンクを送りました。メールを開いて、リンクをこのブラウザで開いてください。`);
+    setMessage(`${email} にログイン用のリンクを送りました。届くまで数分かかることがあります（届かないときは迷惑メールも確認してください）。リンクは、このブラウザで開くのがいちばん確実です。別の端末やメールアプリ内で開いた場合は、メールアドレスの入力を求められます。`);
   }
   async function logout(){
     if(fb) await fb.authM.signOut(fb.auth);
     user = null; if(fb) remote = null;
     message = 'ログアウトしました'; emit();
+  }
+
+  // ページを開いたときの開始処理（メールのリンクから戻ってきた場合のログイン完了／ログイン状態の復元）
+  // メールのリンクからログインを完了する（メールアドレスの確認つき）
+  async function completeLink(email){
+    email = (email || '').trim();
+    if(!validEmail(email)){ setMessage('メールアドレスの形式が正しくありません'); return; }
+    try{
+      await init();
+      await fb.authM.signInWithEmailLink(fb.auth, email, location.href);
+      localStorage.removeItem(EMAIL_KEY);
+      history.replaceState(null, '', location.pathname);              // URLに残った認証用の文字列を消す
+      pendingLink = false;
+      setMessage('ログインしました');
+    }catch(e){
+      console.error(e);
+      if(e && e.code !== 'auth/invalid-email'){                        // アドレスの打ち間違い以外は、このリンクではもうログインできない
+        pendingLink = false;
+        try{ history.replaceState(null, '', location.pathname); }catch(_){}
+      }
+      setMessage(explainError(e));
+    }
   }
 
   // ページを開いたときの開始処理（メールのリンクから戻ってきた場合のログイン完了／ログイン状態の復元）
@@ -162,19 +207,16 @@ const Cloud = (function(){
     try{
       await init();
       const { authM, auth } = fb;
-      if(authM.isSignInWithEmailLink(auth, location.href)){
-        let email = localStorage.getItem(EMAIL_KEY);
-        if(!email) email = prompt('確認のため、ログインに使ったメールアドレスを入力してください') || '';
-        await authM.signInWithEmailLink(auth, email.trim(), location.href);
-        localStorage.removeItem(EMAIL_KEY);
-        history.replaceState(null, '', location.pathname);            // URLに残った認証用の文字列を消す
-        message = 'ログインしました';
-      }
       authM.onAuthStateChanged(auth, async (u)=>{
         user = u || null; remote = u ? firestoreRemote(u.uid) : null; ready = true; emit();
         if(u) syncNow().catch(()=>{});                                  // ログインできたら、すぐに同期する
       });
-    }catch(e){ console.error(e); ready = true; message = 'ログインできませんでした：' + (e && e.message ? e.message : e); emit(); }
+      if(authM.isSignInWithEmailLink(auth, location.href)){
+        const email = localStorage.getItem(EMAIL_KEY);
+        if(email) await completeLink(email);
+        else { pendingLink = true; ready = true; emit(); }              // 別の端末・アプリ内ブラウザで開いた: 画面でメールアドレスを確認する
+      }
+    }catch(e){ console.error(e); ready = true; message = explainError(e); emit(); }
   }
 
   /* ---------------------------------------------------------
@@ -188,6 +230,14 @@ const Cloud = (function(){
       <p class="muted">メールアドレスでログインして、旅行データを別の端末でも使えるようにする機能です。使うには Firebase の設定が必要です（手順は <b>CLOUD_SETUP.md</b> を参照）。設定するまでは、これまでどおりこの端末だけで動作します。</p>
     </div>`;
     if(!ready) return `<div class="card" id="cloud-card">${head('確認中…')}<p class="muted">ログイン状態を確認しています。</p></div>`;
+    if(!user && pendingLink) return `
+    <div class="card" id="cloud-card">${head('メールアドレスの確認')}
+      <p>ログイン用のリンクから開きました。確認のため、<b>リンクを送ったときのメールアドレス</b>を入力してください（別の端末やメールアプリ内で開いたときに必要です）。</p>
+      <div class="field"><label for="cloud-email-confirm">メールアドレス</label>
+        <input type="email" id="cloud-email-confirm" autocomplete="email" placeholder="例）you@example.com"></div>
+      <div class="btn-row"><button class="btn accent" id="btn-cloud-complete">ログインを完了する</button></div>
+      ${msg}
+    </div>`;
     if(!user) return `
     <div class="card" id="cloud-card">${head('未ログイン')}
       <p class="muted">メールアドレスを入力すると、ログイン用のリンクが届きます（パスワードは不要です）。ログインすると、旅行データが別の端末とも同期されます。</p>
@@ -214,6 +264,8 @@ const Cloud = (function(){
       try{ await sendLoginLink(document.getElementById('cloud-email').value); }
       catch(e){ setMessage(e && e.message ? e.message : String(e)); }
     };
+    const complete = document.getElementById('btn-cloud-complete');
+    if(complete) complete.onclick = ()=> completeLink(document.getElementById('cloud-email-confirm').value);
     const sync = document.getElementById('btn-cloud-sync');
     if(sync) sync.onclick = ()=> syncNow().then(r=>{ if(r) showToast(`同期しました（送信${r.up}件・受信${r.down}件）`); }).catch(()=>{});
     const out = document.getElementById('btn-cloud-logout');
@@ -221,11 +273,12 @@ const Cloud = (function(){
   }
 
   return {
-    start, renderCard, bindCard, syncNow, sendLoginLink, logout, planSync, configured,
+    start, renderCard, bindCard, syncNow, sendLoginLink, logout, planSync, configured, completeLink, explainError,
     get user(){ return user; }, get busy(){ return busy; },
     // テスト用: Firebase を使わずに、任意の保存先とユーザーを差し込む
     _useRemote(r, u){ remote = r; user = u; ready = true; emit(); },
     _setFb(x){ fb = x; },
-    _resetStart(){ started = false; }
+    _resetStart(){ started = false; pendingLink = false; },
+    get pendingLink(){ return pendingLink; }
   };
 })();
