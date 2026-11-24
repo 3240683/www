@@ -722,3 +722,136 @@ body {
   background: #FFFEFA;
   border: 1px solid var(--line);
 }
+
+/* ===== 旅のしおり風・カードデザイン強化 ===== */
+
+/* 共通カード */
+.card {
+  position: relative;
+  border: 1px solid rgba(190, 177, 150, 0.65);
+  border-radius: 8px;
+
+  box-shadow:
+    0 2px 5px rgba(30, 58, 52, 0.04),
+    0 5px 14px rgba(30, 58, 52, 0.045);
+
+  transition:
+    transform .25s ease,
+    box-shadow .25s ease,
+    border-color .25s ease;
+}
+
+/* カードの角に小さなアクセント */
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  width: 22px;
+  height: 3px;
+
+  background: var(--accent);
+  border-radius: 8px 0 4px 0;
+
+  opacity: .8;
+}
+
+/* ホバー時 */
+.card:hover {
+  transform: translateY(-3px);
+
+  border-color: rgba(181, 80, 47, 0.35);
+
+  box-shadow:
+    0 5px 12px rgba(30, 58, 52, 0.07),
+    0 12px 25px rgba(30, 58, 52, 0.09);
+}
+
+/* 旅行カード */
+.trip-card {
+  border-radius: 7px;
+
+  box-shadow:
+    0 2px 5px rgba(30, 58, 52, 0.04),
+    0 4px 10px rgba(30, 58, 52, 0.04);
+
+  transition:
+    transform .25s ease,
+    box-shadow .25s ease,
+    background .25s ease;
+}
+
+/* 旅行カードのホバー */
+.trip-card:hover {
+  transform: translateY(-3px);
+
+  background: #FFFEFA;
+
+  box-shadow:
+    0 6px 14px rgba(30, 58, 52, 0.08),
+    0 12px 22px rgba(30, 58, 52, 0.08);
+}
+
+/* KPIカード */
+.kpi {
+  border-radius: 7px;
+
+  box-shadow: 0 2px 7px rgba(30, 58, 52, 0.045);
+
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease;
+}
+
+.kpi:hover {
+  transform: translateY(-2px);
+
+  box-shadow: 0 6px 14px rgba(30, 58, 52, 0.09);
+}
+
+/* 送金・精算カード */
+.transfer-item {
+  border-radius: 6px;
+
+  box-shadow: 0 2px 5px rgba(30, 58, 52, 0.035);
+
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease;
+}
+
+.transfer-item:hover {
+  transform: translateY(-2px);
+
+  box-shadow: 0 5px 12px rgba(30, 58, 52, 0.08);
+}
+
+/* モーダル */
+.modal {
+  border-radius: 9px;
+
+  box-shadow:
+    0 8px 20px rgba(30, 58, 52, 0.10),
+    0 18px 40px rgba(30, 58, 52, 0.13);
+}
+
+/* スマホでは浮き上がりを無効化 */
+@media (hover: none) {
+  .card:hover,
+  .trip-card:hover,
+  .kpi:hover,
+  .transfer-item:hover {
+    transform: none;
+  }
+}
+
+/* 動きを減らす設定 */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .trip-card,
+  .kpi,
+  .transfer-item {
+    transition: none;
+  }
+}
