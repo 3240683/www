@@ -643,3 +643,82 @@ table.data-table th {
     font-size: 10px;
   }
 }
+
+
+/* ===== 和紙・古い旅行ノート風の紙質感 ===== */
+
+/* ページ全体に薄い紙の質感 */
+body {
+  background-color: #F3EFE4;
+  background-blend-mode: multiply;
+}
+
+/* アプリ全体に紙の雰囲気 */
+#app {
+  position: relative;
+  isolation: isolate;
+}
+
+/* 紙の粒子感を重ねる */
+#app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+
+  pointer-events: none;
+
+  opacity: 0.16;
+
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(125, 100, 65, 0.035) 0px,
+      rgba(125, 100, 65, 0.035) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(125, 100, 65, 0.025) 0px,
+      rgba(125, 100, 65, 0.025) 1px,
+      transparent 1px,
+      transparent 5px
+    );
+
+  mix-blend-mode: multiply;
+}
+
+/* カードを少し紙らしく */
+.card {
+  background: rgba(255, 254, 250, 0.93);
+  border: 1px solid rgba(190, 177, 150, 0.55);
+  box-shadow:
+    0 2px 5px rgba(70, 55, 35, 0.045),
+    0 5px 14px rgba(70, 55, 35, 0.035);
+}
+
+/* 旅行カード */
+.trip-card {
+  background: rgba(255, 254, 250, 0.94);
+  border-color: rgba(190, 177, 150, 0.6);
+}
+
+/* 入力欄も紙色に */
+.field input,
+.field select,
+.field textarea {
+  background: rgba(248, 245, 236, 0.96);
+}
+
+/* 上部ヘッダー */
+.topbar {
+  background: rgba(255, 254, 250, 0.91);
+  border-bottom-color: var(--ink);
+}
+
+/* モーダル */
+.modal {
+  background: #FFFEFA;
+  border: 1px solid var(--line);
+}
