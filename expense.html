@@ -275,7 +275,11 @@ function fixDigitMisreads(l){
     .replace(/(?<=\d)\s*([,.])\s*(?=\d{3}(?!\d))/g, '$1');
 }
 
-const RE_PLUS  = /合計|お買上|ご請求|請求額|領収金額|総計|TOTAL|Total|(?<![小少会])計/;
+const RE_PLUS  = /合[計言訂詰語討針]|お買上|ご請求|請求額|領収金額|総計|TOTAL|Total|(?<![小少会])計/;
+// 追加: 税の内訳の行（外税計・税合計・内消費税等 など）は「合計」ではない。税込の「合計（税込）」は対象外にしない
+const RE_TAXLINE = /外税|内税|消費税|税合計|税計|税額|税率/;
+// 追加: 支払方法の行（カード・電子マネーなど）。ここに出る金額は、合計と一致することが多い
+const RE_PAY = /銀聯|クレジット|カード|VISA|JCB|Master|AMEX|Suica|ICOCA|PASMO|交通系|電子マネー|PayPay|QUICPay|楽天Edy|nanaco|WAON|お支払|ご利用金額/;
 const RE_SUB   = /[小少]計/;
 const RE_MINUS_STRICT = /預|釣/;
 const RE_MINUS = /預|釣|現金|ポイント|対象|税|軽減|割引|クーポン|TEL|Tel|電話|登録|番号|No\.?|ID/;
@@ -387,7 +391,7 @@ function amountTokens(rawLine){
   return { line, tokens };
 }
 function lineFlags(line){
-  const hasPlus = RE_PLUS.test(line);
+  const hasPlus = RE_PLUS.test(line) && !RE_TAXLINE.test(line);
   // 「N点」があり、商品名らしい日本語が（ほとんど）無い行は、合計／小計の行（例: 「合計/ 23点 ¥1,400」が「atl/ 23 点 ¥1.400」と崩れた場合）
   const rest = line.replace(/[\d\s,.¥\\\/:()（）\-]/g, '').replace(/[点計合小総]/g, '');
   const totalLike = /\d+\s*点/.test(line) && (rest.match(/[\u3040-\u30ff\u4e00-\u9fff]/g) || []).length <= 1;
@@ -404,9 +408,10 @@ function lineFlags(line){
 //  ・同じ金額が複数行に出てくるほど加点（レシートは合計が小計・対象額などで繰り返し出る）
 //  ・「お預り − お釣り ＝ 合計」が成り立つ組み合わせを見つけたら、その合計に加点し、お預り・お釣りは候補から外す
 //  ・合計の約6.5〜9.5%（内税の目安）にあたる金額は消費税とみなして外す
-function extractAmountCandidates(rawLines){
+function extractAmountCandidates(rawLines, lineSrc){
   const map = new Map();
-  rawLines.forEach(raw=>{
+  rawLines.forEach((raw, li)=>{
+    const src = lineSrc ? lineSrc[li] : 0;
     const { line, tokens } = amountTokens(raw);
     if(!tokens.length) return;
     const f = lineFlags(line);
@@ -419,8 +424,11 @@ function extractAmountCandidates(rawLines){
       if(f.minus) s -= 8;
       if(!t.hasYen && !t.hasComma && String(t.value).length <= 2) s -= 12;
       let e = map.get(t.value);
-      if(!e){ e = { value:t.value, score:s, count:0, solid:false, tag:'', flag:false, tax:false }; map.set(t.value, e); }
-      e.count++;
+      if(!e){ e = { value:t.value, score:s, count:0, cnt:{}, solid:false, tag:'', flag:false, tax:false, pay:false, nonMinus:false, max:false }; map.set(t.value, e); }
+      e.cnt[src] = (e.cnt[src] || 0) + 1;                // 出現数は読み取りパスごとに数える（2回読んだだけで「複数行」にしない）
+      e.count = Math.max(...Object.values(e.cnt));
+      if(!f.minus) e.nonMinus = true;
+      if(RE_PAY.test(line) && !f.minus) e.pay = true;
       e.score = Math.max(e.score, s);
       if(t.hasYen || t.hasComma) e.solid = true;
       if(f.hasPlus || (f.totalLike && !f.hasSub && !f.minus)) e.tag = '合計'; else if(f.hasSub && !e.tag) e.tag = '小計';
@@ -438,6 +446,7 @@ function extractAmountCandidates(rawLines){
     if(!c || c === a || c === b) return;
     if(!(c.score > a.score && c.score > b.score)) return;
     if(c.tag !== '合計' && c.tag !== '小計') return;     // 合計／小計の根拠が無い数字は、偶然の引き算の一致で昇格させない
+    if(a.tag || b.tag) return;                            // 合計・小計の行にある数字は、お預り／お釣りではない（例: 合計2,318 − 小計2,147 ＝ 外税171 の偶然の一致）
     if(!best || c.score > best.c.score) best = { a, b, c };
   }));
   if(best){ best.c.score += 8; best.c.tag = '合計'; best.a.flag = true; best.b.flag = true; }
@@ -449,6 +458,14 @@ function extractAmountCandidates(rawLines){
     }
   });
 
+  // 追加: 支払方法の行（カード等）にも同じ金額が出ていれば加点。お預り・税・ポイント以外で最も大きい金額にも小さく加点
+  arr.forEach(c=>{ if(c.pay && c.solid) c.score += 5; });
+  const pool = arr.filter(c=> c.solid && c.nonMinus && c.score > 0 && !c.tax && !c.flag);
+  if(pool.length > 1){
+    const top = pool.reduce((a,b)=> b.value > a.value ? b : a);
+    top.score += 4; top.max = true;
+  }
+
   const sorted = arr.filter(c=> !c.flag).sort((a,b)=> b.score - a.score);
   const strong = sorted.filter(c=> c.score > 0 && !c.tax);
   const topScore = strong.length ? strong[0].score : 0;
@@ -456,23 +473,105 @@ function extractAmountCandidates(rawLines){
   // 1位が「合計」と確定しているときは、合計／小計のラベルが付いた候補だけを残す（商品の単価などを出さない）
   if(shown.length && shown[0].tag === '合計') shown = shown.filter(c=> c.tag === '合計' || c.tag === '小計');
   return (shown.length ? shown : sorted.slice(0, 2)).slice(0, 3)
-    .map(c=> ({ value:c.value, score:c.score, label: c.tag || (c.count >= 2 ? '複数行に登場' : '') }));
+    .map(c=> ({ value:c.value, score:c.score, label: c.tag || (c.pay ? '支払額と一致' : (c.max ? '最も大きい金額' : (c.count >= 2 ? '複数行に登場' : ''))) }));
 }
 
-// 店舗名の推定: 電話番号を除き、住所・営業時間・キャンペーン文言の行は避け、「…店」を優先
-function guessStore(rawLines){
-  const strip = l => l.replace(/^[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]+|[^A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff)]+$/g, '').trim();
-  const cands = rawLines.slice(0, 12).map(cleanLine)
+// 店舗名の推定: 「ブランド名 ＋ ○○店」の形にする（例: バスキンロビンス アクアウォーク大垣店）
+//  ・○○店: 電話番号・住所・営業時間・キャンペーン文言の行は避け、「…店」で終わる語を優先
+//  ・ブランド名: ロゴは文字が大きく崩れて読めないことが多いため、主なチェーン店の名前を辞書で照合する（英字は1文字の読み違いまで許す）
+const BRANDS = [
+  ['バスキンロビンス', /バスキン|サーティワン|ロビンス/, ['BASKIN', 'ROBBINS']],
+  ['TRIAL', /トライアル/, ['TRIAL']],
+  ['セブン-イレブン', /セブン[-ー]?イレブン/, ['SEVENELEVEN']],
+  ['ファミリーマート', /ファミリーマート|ファミマ/, ['FAMILYMART']],
+  ['ローソン', /ローソン/, ['LAWSON']],
+  ['ミニストップ', /ミニストップ/, ['MINISTOP']],
+  ['デイリーヤマザキ', /デイリーヤマザキ/, []],
+  ['イオン', /イオン(?!カード|銀行)/, ['AEON']],
+  ['マックスバリュ', /マックスバリュ/, []],
+  ['イトーヨーカドー', /ヨーカドー/, []],
+  ['ユニクロ', /ユニクロ/, ['UNIQLO']],
+  ['ダイソー', /ダイソー/, ['DAISO']],
+  ['セリア', /セリア/, ['SERIA']],
+  ['ドン・キホーテ', /ドン.?キホーテ/, []],
+  ['マクドナルド', /マクドナルド/, []],
+  ['すき家', /すき家/, []],
+  ['吉野家', /吉野家/, []],
+  ['スターバックス', /スターバックス/, ['STARBUCKS']],
+  ['ドトール', /ドトール/, ['DOUTOR']],
+  ['コメダ珈琲店', /コメダ/, []],
+  ['サイゼリヤ', /サイゼリヤ/, []],
+  ['ガスト', /ガスト/, []],
+  ['くら寿司', /くら寿司/, []],
+  ['スシロー', /スシロー/, []],
+  ['ケンタッキー', /ケンタッキー/, []],
+  ['モスバーガー', /モスバーガー/, []],
+  ['ミスタードーナツ', /ミスタードーナツ/, []],
+  ['ツルハドラッグ', /ツルハ/, []],
+  ['ウエルシア', /ウエルシア/, []],
+  ['マツモトキヨシ', /マツモトキヨシ|マツキヨ/, []],
+  ['スギ薬局', /スギ薬局/, []],
+  ['サンドラッグ', /サンドラッグ/, []],
+  ['ヤマダ電機', /ヤマダ電機|ヤマダデンキ/, []],
+  ['ビックカメラ', /ビックカメラ/, []],
+  ['ヨドバシカメラ', /ヨドバシ/, []],
+  ['ニトリ', /ニトリ/, ['NITORI']],
+  ['カインズ', /カインズ/, ['CAINZ']],
+  ['コーナン', /コーナン/, []],
+  ['ワークマン', /ワークマン/, []],
+  ['しまむら', /しまむら/, []],
+  ['ブックオフ', /ブックオフ/, []],
+  ['無印良品', /無印良品/, ['MUJI']],
+  ['ENEOS', /エネオス/, ['ENEOS']]
+];
+function editDistance(a, b){
+  const dp = Array.from({ length: a.length + 1 }, (_, i)=> [i]);
+  for(let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for(let i = 1; i <= a.length; i++) for(let j = 1; j <= b.length; j++)
+    dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return dp[a.length][b.length];
+}
+function detectBrand(rawLines){
+  const lines = rawLines.slice(0, 16).map(cleanLine);
+  const text = lines.join('\n');
+  const tokens = text.toUpperCase().replace(/[^A-Z\n]/g, ' ').split(/\s+/).filter(t=> t.length >= 4);
+  const joined = lines.join('').toUpperCase().replace(/[^A-Z]/g, '');
+  for(const [name, re, latin] of BRANDS){
+    if(re.test(text)) return name;
+    for(const w of latin){
+      // 英字は、1文字の読み違い（TRIAL→TRIAF）まで許す。短い名前（4文字以下）は完全一致のみ
+      if(w.length >= 5 ? tokens.some(t=> editDistance(t, w) <= 1) || joined.includes(w) : tokens.includes(w)) return name;
+    }
+  }
+  return null;
+}
+function pickBranch(rawLines){
+  const strip = l => l.replace(/^[^A-Za-z0-9぀-ヿ一-鿿]+|[^A-Za-z0-9぀-ヿ一-鿿)]+$/g, '').trim();
+  const cands = rawLines.slice(0, 16).map(cleanLine)
     .map(l=> l.replace(/(TEL|Tel|電話|ＴＥＬ)\s*[\d\-]*|\d{2,4}-\d{2,4}-\d{3,4}/g, ' ').trim())
     .map(strip)
-    .filter(l=> /[A-Za-z\u3040-\u30ff\u4e00-\u9fff]{3,}/.test(l))
-    .filter(l=> !/領収|レシート|ご利用|ありがとう|営業|開催|セール|ポイント|支払|クレジット|\d{4,}/.test(l))
+    .filter(l=> /[A-Za-z぀-ヿ一-鿿]{3,}/.test(l))
+    .filter(l=> !/領収|レシート|ご利用|ありがとう|営業|開催|セール|ポイント|支払|クレジット|お客様|お問い合わせ|\d{4,}/.test(l))
     .filter(l=> !/[都道府県].*[市区町村郡]|[市区町村郡].*\d+-\d+/.test(l));      // 住所らしい行は除外
+  let branch = null;
   for(const l of cands){
     const tok = l.split(/\s+/).find(t=> /\S{2,}店$/.test(t));                  // 「みなとみらい店」のような語を優先
-    if(tok) return tok;
+    if(tok){ branch = tok; break; }
   }
-  return cands[0] || null;
+  const fb = cands[0] ? cands[0].replace(/(店)\s*\S{1,2}$/, '$1') : null;      // 「…店 佑」のように行末に混ざった読み違いを落とす
+  return { branch, fb };
+}
+// headLines: レシート上部だけを拡大して読み直した行（任意）。ブランド名（ロゴ）が見つかったときだけ使う
+function guessStore(rawLines, headLines){
+  const body = pickBranch(rawLines);
+  const head = headLines ? pickBranch(headLines) : { branch: null, fb: null };
+  const brand = detectBrand(rawLines) || (headLines ? detectBrand(headLines) : null);
+  if(brand){
+    const branch = body.branch || head.branch;
+    if(!branch) return brand;
+    return branch.includes(brand) ? branch : brand + ' ' + branch;              // 例: バスキンロビンス アクアウォーク大垣店
+  }
+  return body.branch || body.fb;
 }
 
 // 「全行表示」用: 金額・日付に関係しそうな行だけに絞る（住所・電話・領収証・軽減税率などは除外）
@@ -502,10 +601,10 @@ function extractDateFromLine(line){
   const d = findDates(line).sort((a,b)=> b.score - a.score)[0];
   return d ? d.value : null;
 }
-function analyzeLines(lines, ctx){
+function analyzeLines(lines, ctx, lineSrc){
   OCR_CTX = ctx || OCR_CTX;
   return {
-    amounts: extractAmountCandidates(lines),
+    amounts: extractAmountCandidates(lines, lineSrc),
     dates: extractDateCandidates(lines),
     store: guessStore(lines),
     lines
@@ -530,12 +629,12 @@ function planStrips(w, h, variant){
 }
 /* ===END-EXTRACT=== 変更: 金額・日付の候補抽出ロジック（ここまで） */
 
-// 変更: 画像の前処理。縮小しすぎず（長辺3000px前後）、グレースケール化だけを行う。
+// 変更: 画像の前処理。グレースケール化だけを行う（長辺2400px前後。大きすぎる写真は縮小して速度を確保）
 // ※ コントラストの強制伸張は日付の「/」が「7」に化ける原因になったため行わない
 function toGrayscale(ctx, w, h){
   const img = ctx.getImageData(0, 0, w, h), d = img.data;
   for(let i=0; i<d.length; i+=4){
-    const g = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
+    const g = (d[i]*77 + d[i+1]*151 + d[i+2]*28) >> 8;
     d[i] = d[i+1] = d[i+2] = g;
   }
   ctx.putImageData(img, 0, 0);
@@ -545,76 +644,131 @@ async function decodeImage(file){
   catch(e){ return await createImageBitmap(file); }
 }
 
-// 読み取り用の画像（canvas）の配列を作る。
-//  ・普通の画像: 1枚（長辺3000px前後）
-//  ・細長いレシート: 上下に分割した複数枚（各ブロックの幅を1600〜2000pxにそろえる。小さい画像は拡大）
-async function preprocessImages(file, maxSide, variant){
-  try{
-    const bmp = await decodeImage(file);
-    const plan = planStrips(bmp.width, bmp.height, variant);
-    if(!plan){
-      const longSide = Math.max(bmp.width, bmp.height);
-      let target = Math.min(longSide, maxSide);
-      if(longSide < 2400) target = 2400;          // 小さい画像は拡大
-      const scale = target / longSide;
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-      toGrayscale(ctx, canvas.width, canvas.height);
-      return [canvas];
-    }
-    const targetW = Math.min(2000, Math.max(1600, bmp.width));
-    const scale = targetW / bmp.width;
-    return plan.rects.map(r=>{
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW; canvas.height = Math.round(r.h * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(bmp, 0, r.y, bmp.width, r.h, 0, 0, canvas.width, canvas.height);
-      toGrayscale(ctx, canvas.width, canvas.height);
-      return canvas;
-    });
-  }catch(e){
-    console.warn('前処理に失敗したため元画像で読み取ります', e);
-    return [file];
+// 読み取り用の画像（canvas）の配列を作る。bmp は呼び出し側で1回だけデコードしたものを使い回す。
+//  ・普通の画像: 1枚（長辺 maxSide）
+//  ・細長いレシート: 上下に分割した複数枚（各ブロックの幅を1500〜1800pxにそろえる。小さい画像は拡大）
+function preprocessImages(bmp, maxSide, variant){
+  const plan = planStrips(bmp.width, bmp.height, variant);
+  if(!plan){
+    const longSide = Math.max(bmp.width, bmp.height);
+    let target = Math.min(longSide, maxSide);
+    if(longSide < 2000) target = 2000;            // 小さい画像は拡大
+    const scale = target / longSide;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    toGrayscale(ctx, canvas.width, canvas.height);
+    return [canvas];
   }
+  const targetW = Math.min(1800, Math.max(1500, bmp.width));
+  const scale = targetW / bmp.width;
+  return plan.rects.map(r=>{
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW; canvas.height = Math.round(r.h * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, r.y, bmp.width, r.h, 0, 0, canvas.width, canvas.height);
+    toGrayscale(ctx, canvas.width, canvas.height);
+    return canvas;
+  });
+}
+
+// 変更: OCRエンジン（worker）は使い回す。毎回作り直すと、言語データの読み込みで毎回数秒〜十数秒かかっていた。
+// 画面を開いた直後に裏で準備し（prewarm）、使われなくなって3分たったら解放する。
+let ocrWorkerPromise = null, ocrIdleTimer = null, ocrStatusHandler = null;
+function getOcrWorker(){
+  if(!ocrWorkerPromise){
+    ocrWorkerPromise = Tesseract.createWorker('jpn+eng', 1, {
+      logger: (m)=>{ if(ocrStatusHandler) ocrStatusHandler(m); }
+    }).catch(e=>{ ocrWorkerPromise = null; throw e; });
+  }
+  clearTimeout(ocrIdleTimer);
+  return ocrWorkerPromise;
+}
+function releaseOcrWorkerLater(){
+  clearTimeout(ocrIdleTimer);
+  ocrIdleTimer = setTimeout(async ()=>{
+    const p = ocrWorkerPromise; ocrWorkerPromise = null;
+    try{ if(p){ const w = await p; await w.terminate(); } }catch(e){}
+  }, 3 * 60 * 1000);
+}
+function prewarmOcr(){
+  if(typeof Tesseract === 'undefined') return;
+  getOcrWorker().then(releaseOcrWorkerLater).catch(()=>{});
 }
 
 // 変更: 1回目で金額・日付が十分に確からしければそのまま採用。
 // 日付が無い／金額の確からしさが低い場合だけ、読み方を変えて2回目を読み取って結果を統合する。
 // 細長いレシートは上下に分割して順に読み、境目で重なった行は重複を除く。
 async function runReceiptOcrOffline(file, onStatus, ctx){
+  const t0 = Date.now();
   let label = '読み取っています…';
   let partInfo = '';
-  const worker = await Tesseract.createWorker('jpn+eng', 1, {
-    logger: (m)=>{
-      if(onStatus && m.status === 'recognizing text') onStatus(`${label}${partInfo}${Math.round((m.progress||0)*100)}%`);
-    }
-  });
+  const elapsed = ()=> Math.round((Date.now() - t0) / 1000) + '秒';
+  ocrStatusHandler = (m)=>{
+    if(!onStatus) return;
+    if(m.status === 'recognizing text') onStatus(`${label}${partInfo}${Math.round((m.progress||0)*100)}%（${elapsed()}経過）`);
+    else if(/loading|initializing/.test(m.status||'')) onStatus(`読み取りエンジンを準備しています…（${elapsed()}経過／初回のみ時間がかかります）`);
+  };
+  if(onStatus) onStatus('読み取りエンジンを準備しています…（初回のみ時間がかかります）');
+  const worker = await getOcrWorker();
+  let bmp = null;
   try{
+    if(onStatus) onStatus('画像を準備しています…');
+    try{ bmp = await decodeImage(file); }catch(e){ bmp = null; }
     const pass = async (maxSide, variant)=>{
-      const imgs = await preprocessImages(file, maxSide, variant);
+      const imgs = bmp ? preprocessImages(bmp, maxSide, variant) : [file];
       const lines = [];
       for(let i = 0; i < imgs.length; i++){
         partInfo = imgs.length > 1 ? `（${i+1}/${imgs.length}）` : '';
+        await new Promise(r=> setTimeout(r, 0));         // 画面の更新を挟む（固まって見えるのを防ぐ）
         const { data } = await worker.recognize(imgs[i]);
         const part = (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
         const tail = new Set(lines.slice(-6).map(cleanLine));          // 前のブロックの末尾と同じ行（重なり部分）は省く
         part.forEach(l=>{ const c = cleanLine(l); if(!(c.length >= 4 && tail.has(c))) lines.push(l); });
+        imgs[i] = null;
       }
       return lines;
     };
-    let lines = await pass(3000, 0);
-    let result = analyzeLines(lines, ctx);
+    let lines = await pass(2400, 0);
+    let src = lines.map(()=> 0);                       // どの読み取りパスで得た行か（同じ金額を2回読んだだけで「複数行」と数えないため）
+    let result = analyzeLines(lines, ctx, src);
     const weak = !result.dates.length || !result.amounts.length || result.amounts[0].score < 12;
     if(weak){
+      // 2回目は読み方（ページ分割モード）を変える。写真に背景や紙の折れが写っていて、1回目で行の並びを取り違えたときに効く
       label = '精度を上げるため再読み取りしています…';
-      lines = lines.concat(await pass(4000, 1));
-      result = analyzeLines(lines, ctx);
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      const more = await pass(1800, 1);
+      lines = lines.concat(more); src = src.concat(more.map(()=> 1));
+      result = analyzeLines(lines, ctx, src);
+    }
+    // 店名: ブランド名（ロゴ）が見つからなければ、レシート上部だけを拡大して読み直す（ロゴは大きな文字で崩れやすいため）
+    if(bmp && !detectBrand(lines)){
+      try{
+        label = '店名を確認しています…'; partInfo = '';
+        await worker.setParameters({ tessedit_pageseg_mode: '11' });
+        const tall = bmp.height / bmp.width > 2.2;
+        const h = Math.max(1, Math.round(bmp.height * (tall ? 0.16 : 0.25)));
+        const sc = 1500 / bmp.width;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1500; canvas.height = Math.max(1, Math.round(h * sc));
+        const c2 = canvas.getContext('2d', { willReadFrequently: true });
+        c2.imageSmoothingQuality = 'high';
+        c2.drawImage(bmp, 0, 0, bmp.width, h, 0, 0, canvas.width, canvas.height);
+        toGrayscale(c2, canvas.width, canvas.height);
+        const { data } = await worker.recognize(canvas);
+        const head = (data.text || '').split('\n').map(l=>l.trim()).filter(Boolean);
+        result.store = guessStore(lines, head);
+      }catch(e){ console.warn('店名の確認に失敗しました', e); }
     }
     return result;
   } finally {
-    await worker.terminate();
+    try{ await worker.setParameters({ tessedit_pageseg_mode: '3' }); }catch(e){}       // 使い回すので、読み方を元に戻す
+    ocrStatusHandler = null;
+    if(bmp && bmp.close) bmp.close();
+    releaseOcrWorkerLater();
   }
 }
 
@@ -783,9 +937,8 @@ function bindExpenseTab(trip){
     document.getElementById('ocr-lines').innerHTML = '';
     previewEl.innerHTML = '';
     pendingReceipt = null;
-    const storePromise = compressForStorage(file).catch(()=> null);      // 保存用の縮小画像を並行して作る
     try{
-      statusEl.textContent = '読み取っています…（初回はライブラリのダウンロードに少し時間がかかります）';
+      statusEl.textContent = '読み取っています…';
       const result = await runReceiptOcrOffline(file, (msg)=>{ statusEl.textContent = msg; },
         { tripStart: trip.startDate, tripEnd: trip.endDate });
       if(result.amounts.length) document.getElementById('ex-amount').value = result.amounts[0].value.toLocaleString('ja-JP');
@@ -810,19 +963,20 @@ function bindExpenseTab(trip){
       statusEl.textContent = '読み取りに失敗しました（' + (err.message||'エラー') + '）。手入力してください。';
       showToast('OCRに失敗しました。手入力してください。');
     }
-    pendingReceipt = await storePromise;      // 読み取りに失敗しても、画像の保存は選べる
+    try{ pendingReceipt = await compressForStorage(file); }catch(e){ pendingReceipt = null; }      // 保存用の縮小画像は読み取りのあとで作る（読み取りに失敗しても、画像の保存は選べる）
     renderReceiptPreview();
   }
 
   // スマホ: 標準のカメラアプリを起動（高解像度）。PC: ブラウザのカメラ画面。どちらも使えなければファイル選択
   document.getElementById('btn-camera').onclick = ()=>{
+    prewarmOcr();       // 撮影している間に、読み取りエンジンを裏で準備しておく
     if(IS_MOBILE || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
       document.getElementById('ocr-camera').click();
     } else {
       openCameraModal(processReceipt);
     }
   };
-  document.getElementById('btn-pick-file').onclick = ()=> document.getElementById('ocr-file').click();
+  document.getElementById('btn-pick-file').onclick = ()=>{ prewarmOcr(); document.getElementById('ocr-file').click(); };
   ['ocr-file', 'ocr-camera'].forEach(id=>{
     document.getElementById(id).onchange = (e)=>{
       const f = e.target.files[0];
