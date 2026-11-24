@@ -292,9 +292,10 @@ function openTripFormModal(tripId) {
             <input type="date" id="tf-start" value="${trip?.startDate || ''}">
           </div>
           <div class="field">
-            <label>終了日 *</label>
-            <input type="date" id="tf-end" value="${trip?.endDate || ''}">
-          </div>
+              <label>終了日 *</label>
+              <input type="date" id="tf-end" value="${trip?.endDate || ''}">
+              <small class="muted">開始日の翌日以降を選択してください。</small>
+         </div>
         </div>
 
         <h3>交通費の計算</h3>
@@ -351,7 +352,44 @@ function openTripFormModal(tripId) {
 
   const $ = id => document.getElementById(id);
   $('tf-method').value = old.method || 'train';
+　  // 開始日の翌日を取得する
+  function getNextDay(dateString) {
+    if (!dateString) return '';
 
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day + 1);
+
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+
+    return `${y}-${m}-${d}`;
+  }
+
+  // 終了日の選択可能範囲を設定する
+  function updateEndDateLimit() {
+    const startDate = $('tf-start').value;
+    const endInput = $('tf-end');
+
+    if (!startDate) {
+      endInput.removeAttribute('min');
+      return;
+    }
+
+    const minEndDate = getNextDay(startDate);
+    endInput.min = minEndDate;
+
+    // 開始日を変更して終了日が条件に合わなくなった場合はリセット
+    if (endInput.value && endInput.value < minEndDate) {
+      endInput.value = '';
+    }
+  }
+
+  // 開始日が変更されたときに終了日の制限を更新
+  $('tf-start').addEventListener('change', updateEndDateLimit);
+
+  // モーダルを開いたときにも制限を適用
+  updateEndDateLimit();
   function updateCost() {
     const fare = Math.max(0, Number($('tf-fare').value) || 0);
     const people = Math.max(1, Number($('tf-people').value) || 1);
@@ -478,8 +516,8 @@ function openTripFormModal(tripId) {
         showToast('必須項目をすべて入力してください');
         return;
       }
-      if (endDate < startDate) {
-        showToast('終了日は開始日以降にしてください');
+      if (endDate <= startDate) {
+        showToast('終了日は開始日の翌日以降に設定してください');
         return;
       }
       if (fareText.trim() === '' || !Number.isFinite(fare) || fare < 0) {
