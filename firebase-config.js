@@ -6,8 +6,10 @@
      手順は CLOUD_SETUP.md を参照してください。
 ========================================================= */
 window.FIREBASE_CONFIG = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  appId: ''
+  apiKey: "AIzaSyCxHwfDKEvoy6LpXtR9vih78hnPQFuULcE",
+  authDomain: "ryohimemo.firebaseapp.com",
+  projectId: "ryohimemo",
+  storageBucket: "ryohimemo.firebasestorage.app",
+  messagingSenderId: "265948764",
+  appId: "1:265948764:web:cb51665a0eeea60c90e099"
 };
